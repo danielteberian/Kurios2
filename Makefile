@@ -1,0 +1,113 @@
+# Kurios2 - Top Level Makefile
+
+.PHONY: all clean boot kernel image-bios image-uefi run-bios run-uefi
+
+# Build directories
+BUILD_DIR := build
+ISO_DIR := $(BUILD_DIR)/iso
+
+all: boot kernel
+
+# Build bootloader
+boot:
+	$(MAKE) -C boot
+
+# Build kernel
+kernel:
+	$(MAKE) -C kernel
+
+# Create BIOS bootable disk image
+image-bios: boot kernel
+	@echo "Creating BIOS bootable disk image..."
+	@mkdir -p $(BUILD_DIR)
+	# Create disk image (1.44MB floppy size for testing)
+	dd if=/dev/zero of=$(BUILD_DIR)/kurios2-bios.img bs=512 count=2880 2>/dev/null
+	# Write bootloader (stage1 + stage2)
+	dd if=$(BUILD_DIR)/boot/bios_boot.bin of=$(BUILD_DIR)/kurios2-bios.img conv=notrunc 2>/dev/null
+	# Write kernel starting at sector 34 (after stage1 + stage2)
+	dd if=$(BUILD_DIR)/kernel/kernel.bin of=$(BUILD_DIR)/kurios2-bios.img bs=512 seek=34 conv=notrunc 2>/dev/null
+	@echo "BIOS image: $(BUILD_DIR)/kurios2-bios.img"
+
+# Create UEFI bootable disk image
+image-uefi: boot kernel
+	@echo "Creating UEFI bootable disk image..."
+	@mkdir -p $(BUILD_DIR)
+	# Create FAT32 disk image (64MB)
+	dd if=/dev/zero of=$(BUILD_DIR)/kurios2-uefi.img bs=1M count=64 2>/dev/null
+	# Create FAT32 filesystem
+	mformat -i $(BUILD_DIR)/kurios2-uefi.img -F ::
+	# Create EFI directories
+	mmd -i $(BUILD_DIR)/kurios2-uefi.img ::/EFI
+	mmd -i $(BUILD_DIR)/kurios2-uefi.img ::/EFI/BOOT
+	mmd -i $(BUILD_DIR)/kurios2-uefi.img ::/EFI/KURIOS
+	# Copy UEFI bootloader
+	mcopy -i $(BUILD_DIR)/kurios2-uefi.img $(BUILD_DIR)/boot/BOOTX64.EFI ::/EFI/BOOT/
+	# Copy kernel
+	mcopy -i $(BUILD_DIR)/kurios2-uefi.img $(BUILD_DIR)/kernel/kernel.bin ::/EFI/KURIOS/KERNEL.BIN
+	@echo "UEFI image: $(BUILD_DIR)/kurios2-uefi.img"
+
+# Create hybrid ISO (BIOS + UEFI)
+image-iso: boot kernel
+	@echo "Creating hybrid ISO..."
+	@mkdir -p $(ISO_DIR)/boot/grub
+	@mkdir -p $(ISO_DIR)/EFI/BOOT
+	@mkdir -p $(ISO_DIR)/EFI/KURIOS
+	# Copy kernel
+	cp $(BUILD_DIR)/kernel/kernel.bin $(ISO_DIR)/boot/
+	# Copy UEFI bootloader
+	cp $(BUILD_DIR)/boot/BOOTX64.EFI $(ISO_DIR)/EFI/BOOT/
+	cp $(BUILD_DIR)/kernel/kernel.bin $(ISO_DIR)/EFI/KURIOS/KERNEL.BIN
+	# Create GRUB config for BIOS boot
+	echo 'set timeout=0' > $(ISO_DIR)/boot/grub/grub.cfg
+	echo 'set default=0' >> $(ISO_DIR)/boot/grub/grub.cfg
+	echo 'menuentry "Kurios2" {' >> $(ISO_DIR)/boot/grub/grub.cfg
+	echo '    multiboot2 /boot/kernel.bin' >> $(ISO_DIR)/boot/grub/grub.cfg
+	echo '    boot' >> $(ISO_DIR)/boot/grub/grub.cfg
+	echo '}' >> $(ISO_DIR)/boot/grub/grub.cfg
+	# Create ISO
+	grub-mkrescue -o $(BUILD_DIR)/kurios2.iso $(ISO_DIR) 2>/dev/null
+	@echo "ISO image: $(BUILD_DIR)/kurios2.iso"
+
+# Run with QEMU (BIOS mode)
+run-bios: image-bios
+	qemu-system-x86_64 \
+		-drive format=raw,file=$(BUILD_DIR)/kurios2-bios.img \
+		-m 256M \
+		-serial stdio \
+		-no-reboot \
+		-no-shutdown
+
+# Run with QEMU (UEFI mode) - requires OVMF
+run-uefi: image-uefi
+	@if [ ! -f /usr/share/OVMF/OVMF_CODE.fd ]; then \
+		echo "OVMF not found. Install with: sudo apt install ovmf"; \
+		exit 1; \
+	fi
+	qemu-system-x86_64 \
+		-drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd \
+		-drive format=raw,file=$(BUILD_DIR)/kurios2-uefi.img \
+		-m 256M \
+		-serial stdio \
+		-no-reboot \
+		-no-shutdown
+
+# Clean all build artifacts
+clean:
+	$(MAKE) -C boot clean
+	$(MAKE) -C kernel clean
+	rm -rf $(BUILD_DIR)
+
+# Show help
+help:
+	@echo "Kurios2 Build System"
+	@echo ""
+	@echo "Targets:"
+	@echo "  all         - Build bootloader and kernel"
+	@echo "  boot        - Build bootloader only"
+	@echo "  kernel      - Build kernel only"
+	@echo "  image-bios  - Create BIOS bootable disk image"
+	@echo "  image-uefi  - Create UEFI bootable disk image"
+	@echo "  image-iso   - Create hybrid ISO (requires grub-mkrescue)"
+	@echo "  run-bios    - Run in QEMU with BIOS"
+	@echo "  run-uefi    - Run in QEMU with UEFI (requires OVMF)"
+	@echo "  clean       - Remove all build artifacts"
