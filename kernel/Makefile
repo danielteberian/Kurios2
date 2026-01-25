@@ -12,7 +12,8 @@ C_SOURCES := \
     main.c \
     stack_protector.c \
     debug/debug.c \
-    arch/x86_64/serial.c
+    arch/x86_64/serial.c \
+    mm/pmm.c
 
 # Object files
 ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(BUILD_DIR)/%.o)
@@ -52,6 +53,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 	mkdir -p $(BUILD_DIR)/debug
 	mkdir -p $(BUILD_DIR)/arch/x86_64
+	mkdir -p $(BUILD_DIR)/mm
 
 # Ensure directories exist before compiling
 $(BUILD_DIR)/debug/%.o: | $(BUILD_DIR)

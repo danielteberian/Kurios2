@@ -19,7 +19,10 @@
 11. [ ] Basic spinlocks/mutexes
 
 ## In Progress
-(None)
+- [ ] PMM (Buddy Allocator) - READY FOR USER VERIFICATION
+  - `make clean && make run-bios`
+  - Should see PMM stats and free lists
+  - Next: add alloc/free tests, then VMM
 
 ## Completed Recently
 - [x] Stack smash protector - VERIFIED WORKING

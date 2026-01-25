@@ -763,12 +763,12 @@ setup_paging:
     mov dword [0x7000 + 510*8], 0x8003      ; Present + Writable
     mov dword [0x7000 + 510*8 + 4], 0       ; High 32 bits = 0
 
-    ; Higher-half PD: Map 16MB starting at physical 0x200000 (2MB aligned!)
-    ; This gives us plenty of room for the kernel to grow
+    ; Higher-half PD: Map 128MB starting at physical 0x200000 (2MB aligned!)
+    ; This gives us room for kernel + page array + future heap
     ; PD[0] -> 0x200000, PD[1] -> 0x400000, etc.
     mov edi, 0x8000
     mov eax, 0x00200083      ; Physical 0x200000 + Present + Writable + 2MB page
-    mov ecx, 8               ; Map 8 * 2MB = 16MB
+    mov ecx, 64              ; Map 64 * 2MB = 128MB
 
 .fill_kernel_pd:
     mov [edi], eax

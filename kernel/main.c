@@ -3,6 +3,7 @@
 #include "include/types.h"
 #include "debug/debug.h"
 #include "stack_protector.h"
+#include "mm/pmm.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/serial.h"
 #include "boot_info.h"
@@ -156,6 +157,64 @@ void kernel_main(BootInfo *boot_info) {
 
     kprintf("\n  Total usable memory: %llu MB (%llu bytes)\n",
             total_usable / (1024 * 1024), total_usable);
+
+    /* Initialize physical memory manager */
+    pmm_init(boot_info);
+    pmm_dump_stats();
+    pmm_dump_free_lists();
+
+    /* Test PMM allocation and freeing */
+    kprintf("\n=== PMM Allocation Tests ===\n");
+
+    /* Test 1: Allocate single page */
+    uint64_t page1 = alloc_page();
+    kprintf("  Test 1 - alloc_page(): 0x%llx %s\n", page1, page1 ? "OK" : "FAIL");
+
+    /* Test 2: Allocate another single page (should be different) */
+    uint64_t page2 = alloc_page();
+    kprintf("  Test 2 - alloc_page(): 0x%llx %s\n", page2,
+            (page2 && page2 != page1) ? "OK" : "FAIL");
+
+    /* Test 3: Allocate order-2 (4 pages = 16KB) */
+    uint64_t pages4 = alloc_pages(2);
+    kprintf("  Test 3 - alloc_pages(2): 0x%llx %s\n", pages4, pages4 ? "OK" : "FAIL");
+
+    /* Test 4: Allocate order-10 (1024 pages = 4MB) */
+    uint64_t pages4mb = alloc_pages(10);
+    kprintf("  Test 4 - alloc_pages(10): 0x%llx %s\n", pages4mb, pages4mb ? "OK" : "FAIL");
+
+    /* Show stats after allocation */
+    kprintf("\n  After allocations:\n");
+    kprintf("    Free pages: %llu\n", mem_info.free_pages);
+
+    /* Test 5: Free the pages */
+    kprintf("\n  Freeing allocations...\n");
+    free_page(page1);
+    free_page(page2);
+    free_pages(pages4, 2);
+    free_pages(pages4mb, 10);
+
+    kprintf("    Free pages after free: %llu\n", mem_info.free_pages);
+
+    /* Test 6: Allocate and free in a loop to test buddy merging */
+    kprintf("\n  Test 6 - Buddy merging test:\n");
+    uint64_t addrs[8];
+    for (int i = 0; i < 8; i++) {
+        addrs[i] = alloc_pages(7);  /* 512KB each */
+    }
+    kprintf("    Allocated 8 x 512KB blocks\n");
+    kprintf("    Free pages: %llu\n", mem_info.free_pages);
+
+    /* Free in reverse order to test merging */
+    for (int i = 7; i >= 0; i--) {
+        free_pages(addrs[i], 7);
+    }
+    kprintf("    Freed all blocks\n");
+    kprintf("    Free pages after merge: %llu\n", mem_info.free_pages);
+
+    /* Final stats */
+    kprintf("\n=== PMM After Tests ===\n");
+    pmm_dump_free_lists();
 
     /* Print ACPI info if available */
     if (boot_info->flags & BOOT_FLAG_ACPI) {
