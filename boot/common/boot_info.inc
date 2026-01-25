@@ -56,7 +56,7 @@ FB_INFO_SIZE            equ 0x28    ; Structure size
 ; Standard locations
 STAGE2_LOAD_SEG         equ 0x1000      ; Stage 2 loaded at 0x10000
 STAGE2_LOAD_OFF         equ 0x0000
-KERNEL_LOAD_ADDR        equ 0x100000    ; Kernel loaded at 1MB
+KERNEL_LOAD_ADDR        equ 0x200000    ; Kernel loaded at 2MB (for 2MB page alignment)
 BOOT_INFO_ADDR          equ 0x9000      ; Boot info structure at 0x9000
 MEMORY_MAP_ADDR         equ 0x9100      ; Memory map follows boot info
 FRAMEBUFFER_INFO_ADDR   equ 0x9800      ; Framebuffer info

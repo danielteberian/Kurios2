@@ -12,49 +12,49 @@
 - [2026-01-24] Created `toolchain/verify.sh` - Toolchain verification script
 - [2026-01-24] Verified: GCC, G++, NASM 2.16.01, LD, Make, QEMU, xorriso, grub-mkrescue
 
-### Custom Hybrid Bootloader [BUILT - AWAITING VERIFICATION]
-- [2026-01-24] Created common boot protocol:
-  - `boot/common/boot_info.inc` - Assembly definitions
-  - `boot/common/boot_info.h` - C header for kernel
-  - Defines BootInfo structure passed to kernel
-  - Memory map, framebuffer, ACPI RSDP support
+### Custom Hybrid Bootloader [VERIFIED]
+- [2026-01-24] BIOS Bootloader with higher-half support
+- [2026-01-24] UEFI Bootloader
+- [2026-01-24] Common boot protocol (BootInfo structure)
 
-- [2026-01-24] BIOS Bootloader:
-  - `boot/bios/stage1.asm` - 512-byte boot sector
-    - Loads at 0x7C00, initializes segments/stack
-    - Loads stage2 from disk using BIOS INT 13h
-  - `boot/bios/stage2.asm` - Second stage loader (8KB)
-    - Enables A20 line
-    - Gets memory map via E820
-    - Attempts VESA framebuffer setup
-    - Sets up GDT for protected and long mode
-    - Enables paging (identity-mapped 4GB with 2MB pages)
-    - Switches to 64-bit long mode
-    - Loads kernel to 1MB
-    - Jumps to kernel with boot info in RDI
+### Debug Framework [BUILT - AWAITING VERIFICATION]
+- [2026-01-24] Serial port driver (`arch/x86_64/serial.c`)
+  - COM1 initialization at 115200 baud
+  - Blocking putc/getc/puts/write functions
+- [2026-01-24] I/O port access (`arch/x86_64/io.h`)
+  - inb/outb/inw/outw/inl/outl
+  - String I/O functions
+- [2026-01-24] CPU utilities (`arch/x86_64/cpu.h`)
+  - Control register access (CR0-CR4)
+  - MSR read/write
+  - CPUID
+  - Interrupt control (cli/sti)
+  - TLB flush
+- [2026-01-24] Debug/logging framework (`debug/debug.c`)
+  - kprintf with format specifiers (%d, %x, %s, %p, etc.)
+  - Log levels (TRACE, DEBUG, INFO, WARN, ERROR, FATAL)
+  - ANSI color output for serial
+  - ASSERT/ASSERT_MSG macros
+  - panic() with stack trace
+  - hex_dump() utility
+  - Register dump for exceptions
 
-- [2026-01-24] UEFI Bootloader:
-  - `boot/uefi/efi_types.h` - Minimal UEFI type definitions
-  - `boot/uefi/bootloader.c` - UEFI bootloader application
-    - Finds ACPI RSDP from configuration tables
-    - Sets up graphics via GOP (Graphics Output Protocol)
-    - Loads kernel from `\EFI\KURIOS\KERNEL.BIN`
-    - Gets memory map and exits boot services
-    - Jumps to kernel with boot info
-  - `boot/uefi/uefi.ld` - Linker script for PE/COFF output
-
-- [2026-01-24] Test Kernel:
-  - `kernel/entry.asm` - 64-bit entry point
-  - `kernel/main.c` - Displays boot info (VGA text or framebuffer)
-  - `kernel/linker.ld` - Kernel at 1MB physical
-  - `kernel/include/` - Freestanding headers (stdint.h, stddef.h, stdbool.h)
-
-- [2026-01-24] Build System:
-  - `Makefile` - Top-level build with targets:
-    - `all` - Build bootloader and kernel
-    - `image-bios` - Create BIOS bootable disk image
-    - `image-uefi` - Create UEFI bootable disk image
-    - `run-bios` - Test in QEMU with BIOS
-    - `run-uefi` - Test in QEMU with UEFI (requires OVMF)
-  - `boot/Makefile` - Bootloader build
-  - `kernel/Makefile` - Kernel build
+### Higher-Half Kernel [BUILT - AWAITING VERIFICATION]
+- [2026-01-24] Updated linker script
+  - Kernel virtual base: 0xFFFFFFFF80000000
+  - Kernel physical base: 0x100000 (1MB)
+  - Proper LMA/VMA separation
+  - Exported symbols for kernel use
+- [2026-01-24] Updated bootloader paging
+  - Identity map first 4GB
+  - Higher-half mapping for kernel (16MB)
+  - PML4[511] -> PDPT[510] -> PD for kernel
+- [2026-01-24] Kernel entry point
+  - BSS zeroing
+  - Stack setup in higher half
+  - boot_info passing
+- [2026-01-24] Common types header (`include/types.h`)
+  - Page size constants
+  - Alignment macros
+  - Bit manipulation
+  - Compiler attributes

@@ -1,172 +1,169 @@
-/* main.c - Minimal kernel for testing bootloader */
+/* main.c - Kurios2 Kernel Main */
 
-#include "../boot/common/boot_info.h"
+#include "include/types.h"
+#include "debug/debug.h"
+#include "arch/x86_64/cpu.h"
+#include "boot_info.h"
 
-/* VGA text mode buffer */
-static volatile uint16_t *vga_buffer = (uint16_t*)0xB8000;
-static int cursor_x = 0;
-static int cursor_y = 0;
+/* Linker-provided symbols */
+extern uint64_t _kernel_start;
+extern uint64_t _kernel_end;
+extern uint64_t _kernel_phys_start;
+extern uint64_t _kernel_phys_end;
+extern uint64_t _bss_start;
+extern uint64_t _bss_end;
+extern uint64_t _kernel_virt_base;
+extern uint64_t _kernel_phys_base;
 
-#define VGA_WIDTH  80
-#define VGA_HEIGHT 25
-#define VGA_COLOR  0x0F00  /* White on black */
-
-static void vga_clear(void) {
-    for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
-        vga_buffer[i] = VGA_COLOR | ' ';
+/* Memory type names */
+static const char *mmap_type_name(uint32_t type) {
+    switch (type) {
+        case MMAP_TYPE_USABLE:       return "Usable";
+        case MMAP_TYPE_RESERVED:     return "Reserved";
+        case MMAP_TYPE_ACPI_RECLAIM: return "ACPI Reclaim";
+        case MMAP_TYPE_ACPI_NVS:     return "ACPI NVS";
+        case MMAP_TYPE_BAD:          return "Bad Memory";
+        default:                     return "Unknown";
     }
-    cursor_x = 0;
-    cursor_y = 0;
 }
 
-static void vga_putchar(char c) {
-    if (c == '\n') {
-        cursor_x = 0;
-        cursor_y++;
-    } else {
-        vga_buffer[cursor_y * VGA_WIDTH + cursor_x] = VGA_COLOR | c;
-        cursor_x++;
-        if (cursor_x >= VGA_WIDTH) {
-            cursor_x = 0;
-            cursor_y++;
+/* Calculate total usable memory */
+static uint64_t calculate_usable_memory(BootInfo *boot_info) UNUSED;
+static uint64_t calculate_usable_memory(BootInfo *boot_info) {
+    uint64_t total = 0;
+    MemoryMapEntry *mmap = (MemoryMapEntry *)(uintptr_t)boot_info->memory_map;
+
+    for (uint64_t i = 0; i < boot_info->memory_count; i++) {
+        if (mmap[i].type == MMAP_TYPE_USABLE) {
+            total += mmap[i].length;
         }
     }
 
-    if (cursor_y >= VGA_HEIGHT) {
-        /* Scroll up */
-        for (int i = 0; i < VGA_WIDTH * (VGA_HEIGHT - 1); i++) {
-            vga_buffer[i] = vga_buffer[i + VGA_WIDTH];
-        }
-        for (int i = 0; i < VGA_WIDTH; i++) {
-            vga_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH + i] = VGA_COLOR | ' ';
-        }
-        cursor_y = VGA_HEIGHT - 1;
-    }
+    return total;
 }
 
-static void vga_puts(const char *str) {
-    while (*str) {
-        vga_putchar(*str++);
-    }
-}
-
-static void vga_put_hex(uint64_t value) {
-    const char *hex = "0123456789ABCDEF";
-    char buf[17];
-    buf[16] = 0;
-
-    for (int i = 15; i >= 0; i--) {
-        buf[i] = hex[value & 0xF];
-        value >>= 4;
-    }
-    vga_puts(buf);
-}
-
-static void fb_clear(FramebufferInfo *fb, uint32_t color) {
-    uint32_t *pixels = (uint32_t*)(uintptr_t)fb->address;
-    uint32_t total = (fb->pitch / 4) * fb->height;
-
-    for (uint32_t i = 0; i < total; i++) {
-        pixels[i] = color;
-    }
-}
-
-static void fb_draw_test(FramebufferInfo *fb) {
-    uint32_t *pixels = (uint32_t*)(uintptr_t)fb->address;
-    uint32_t pitch = fb->pitch / 4;
-
-    /* Draw colorful pattern */
-    for (uint32_t y = 0; y < fb->height; y++) {
-        for (uint32_t x = 0; x < fb->width; x++) {
-            uint8_t r = (x * 255) / fb->width;
-            uint8_t g = (y * 255) / fb->height;
-            uint8_t b = 128;
-            pixels[y * pitch + x] = (r << 16) | (g << 8) | b;
-        }
-    }
-
-    /* Draw white rectangle in center */
-    uint32_t cx = fb->width / 2;
-    uint32_t cy = fb->height / 2;
-    for (uint32_t y = cy - 50; y < cy + 50; y++) {
-        for (uint32_t x = cx - 100; x < cx + 100; x++) {
-            pixels[y * pitch + x] = 0xFFFFFF;
-        }
-    }
-}
-
-/* Kernel main - called by bootloader */
+/* Kernel main entry point */
 void kernel_main(BootInfo *boot_info) {
-    /* Verify boot info magic */
-    if (boot_info == 0 || boot_info->magic != KURIOS_BOOT_MAGIC) {
-        /* Something is wrong - just halt */
-        vga_clear();
-        vga_puts("BOOT INFO INVALID!");
-        return;
+    /* Initialize debug subsystem first */
+    debug_init();
+
+    kprintf("\n");
+    INFO("Kurios2 Kernel Starting...");
+    kprintf("\n");
+
+    /* Verify boot info */
+    if (boot_info == NULL) {
+        panic("Boot info pointer is NULL!");
     }
 
-    /* Check if we have framebuffer */
-    if (boot_info->flags & BOOT_FLAG_FRAMEBUFFER) {
-        FramebufferInfo *fb = (FramebufferInfo*)(uintptr_t)boot_info->framebuffer;
-        fb_clear(fb, 0x000033);  /* Dark blue */
-        fb_draw_test(fb);
-
-        /* We're in graphics mode - can't use VGA text */
-        return;
+    if (boot_info->magic != KURIOS_BOOT_MAGIC) {
+        panic("Invalid boot info magic: 0x%llx (expected 0x%llx)",
+              boot_info->magic, KURIOS_BOOT_MAGIC);
     }
 
-    /* VGA text mode */
-    vga_clear();
+    INFO("Boot info validated (magic: 0x%llx)", boot_info->magic);
 
-    vga_puts("====================================\n");
-    vga_puts("  Kurios2 Kernel Started!\n");
-    vga_puts("====================================\n\n");
+    /* Print boot information */
+    kprintf("\n=== Boot Information ===\n");
+    kprintf("  Protocol version: %llu\n", boot_info->version);
+    kprintf("  Boot flags:       0x%llx", boot_info->flags);
+    if (boot_info->flags & BOOT_FLAG_BIOS) kprintf(" [BIOS]");
+    if (boot_info->flags & BOOT_FLAG_UEFI) kprintf(" [UEFI]");
+    if (boot_info->flags & BOOT_FLAG_FRAMEBUFFER) kprintf(" [FB]");
+    if (boot_info->flags & BOOT_FLAG_ACPI) kprintf(" [ACPI]");
+    kprintf("\n");
 
-    /* Print boot info */
-    vga_puts("Boot Protocol Version: 0x");
-    vga_put_hex(boot_info->version);
-    vga_puts("\n");
+    /* Print kernel location */
+    kprintf("\n=== Kernel Location ===\n");
+    kprintf("  Virtual base:  0x%016llx\n", (uint64_t)&_kernel_virt_base);
+    kprintf("  Physical base: 0x%016llx\n", boot_info->kernel_phys);
+    kprintf("  Kernel start:  0x%016llx\n", (uint64_t)&_kernel_start);
+    kprintf("  Kernel end:    0x%016llx\n", (uint64_t)&_kernel_end);
+    kprintf("  BSS start:     0x%016llx\n", (uint64_t)&_bss_start);
+    kprintf("  BSS end:       0x%016llx\n", (uint64_t)&_bss_end);
+    kprintf("  Kernel size:   %llu bytes\n", boot_info->kernel_size);
 
-    vga_puts("Boot Flags: 0x");
-    vga_put_hex(boot_info->flags);
-    if (boot_info->flags & BOOT_FLAG_BIOS) vga_puts(" [BIOS]");
-    if (boot_info->flags & BOOT_FLAG_UEFI) vga_puts(" [UEFI]");
-    if (boot_info->flags & BOOT_FLAG_ACPI) vga_puts(" [ACPI]");
-    vga_puts("\n");
+    /* Print current CPU state */
+    kprintf("\n=== CPU State ===\n");
+    kprintf("  CR0: 0x%016llx\n", read_cr0());
+    kprintf("  CR3: 0x%016llx\n", read_cr3());
+    kprintf("  CR4: 0x%016llx\n", read_cr4());
 
-    vga_puts("Kernel loaded at: 0x");
-    vga_put_hex(boot_info->kernel_phys);
-    vga_puts("\n");
+    /* Check if we're really in higher half */
+    uint64_t rip;
+    __asm__ volatile("lea (%%rip), %0" : "=r"(rip));
+    kprintf("  RIP: 0x%016llx\n", rip);
 
-    vga_puts("Kernel size: 0x");
-    vga_put_hex(boot_info->kernel_size);
-    vga_puts(" bytes\n\n");
+    if (rip >= 0xFFFFFFFF80000000ULL) {
+        INFO("Running in higher half - SUCCESS!");
+    } else {
+        WARN("Not running in higher half! RIP=0x%016llx", rip);
+    }
 
     /* Print memory map */
-    vga_puts("Memory Map (");
-    vga_put_hex(boot_info->memory_count);
-    vga_puts(" entries):\n");
+    kprintf("\n=== Memory Map (%llu entries) ===\n", boot_info->memory_count);
 
-    MemoryMapEntry *mmap = (MemoryMapEntry*)(uintptr_t)boot_info->memory_map;
-    for (uint64_t i = 0; i < boot_info->memory_count && i < 10; i++) {
-        vga_puts("  ");
-        vga_put_hex(mmap[i].base);
-        vga_puts(" - ");
-        vga_put_hex(mmap[i].base + mmap[i].length);
-        vga_puts(" [");
-        switch (mmap[i].type) {
-            case MMAP_TYPE_USABLE:       vga_puts("USABLE"); break;
-            case MMAP_TYPE_RESERVED:     vga_puts("RESERVED"); break;
-            case MMAP_TYPE_ACPI_RECLAIM: vga_puts("ACPI"); break;
-            case MMAP_TYPE_ACPI_NVS:     vga_puts("NVS"); break;
-            default:                     vga_puts("OTHER"); break;
+    MemoryMapEntry *mmap = (MemoryMapEntry *)(uintptr_t)boot_info->memory_map;
+    uint64_t total_usable = 0;
+
+    for (uint64_t i = 0; i < boot_info->memory_count; i++) {
+        uint64_t start = mmap[i].base;
+        uint64_t end = start + mmap[i].length;
+        uint64_t size_mb = mmap[i].length / (1024 * 1024);
+
+        kprintf("  %016llx - %016llx  %4lluMB  [%s]\n",
+                start, end, size_mb, mmap_type_name(mmap[i].type));
+
+        if (mmap[i].type == MMAP_TYPE_USABLE) {
+            total_usable += mmap[i].length;
         }
-        vga_puts("]\n");
     }
 
-    if (boot_info->memory_count > 10) {
-        vga_puts("  ... and more\n");
+    kprintf("\n  Total usable memory: %llu MB (%llu bytes)\n",
+            total_usable / (1024 * 1024), total_usable);
+
+    /* Print ACPI info if available */
+    if (boot_info->flags & BOOT_FLAG_ACPI) {
+        kprintf("\n=== ACPI ===\n");
+        kprintf("  RSDP address: 0x%016llx\n", boot_info->acpi_rsdp);
     }
 
-    vga_puts("\n-- System halted --\n");
+    /* Print framebuffer info if available */
+    if (boot_info->flags & BOOT_FLAG_FRAMEBUFFER) {
+        FramebufferInfo *fb = (FramebufferInfo *)(uintptr_t)boot_info->framebuffer;
+        kprintf("\n=== Framebuffer ===\n");
+        kprintf("  Address:    0x%016llx\n", fb->address);
+        kprintf("  Resolution: %ux%u\n", fb->width, fb->height);
+        kprintf("  Pitch:      %u bytes/line\n", fb->pitch);
+        kprintf("  BPP:        %u\n", fb->bpp);
+    }
+
+    /* Assertions test */
+    kprintf("\n=== Testing Debug Framework ===\n");
+
+    /* Test logging at different levels */
+    TRACE("This is a trace message (may not appear depending on log level)");
+    DEBUG("This is a debug message");
+    INFO("This is an info message");
+    WARN("This is a warning message");
+    ERROR("This is an error message (non-fatal)");
+
+    /* Test assertion (should pass) */
+    ASSERT(1 == 1);
+    INFO("Assertion test passed");
+
+    /* Print completion message */
+    kprintf("\n");
+    kprintf("=============================================\n");
+    kprintf("  Kurios2 Kernel Initialized Successfully!\n");
+    kprintf("  Higher-half kernel at 0xFFFFFFFF80000000\n");
+    kprintf("=============================================\n");
+    kprintf("\n");
+
+    INFO("Kernel initialization complete. Halting.");
+
+    /* Halt - in future this will start the scheduler */
+    while (1) {
+        hlt();
+    }
 }

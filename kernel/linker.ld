@@ -1,45 +1,86 @@
-/* Kurios2 Kernel Linker Script */
+/* Kurios2 Kernel Linker Script - Higher Half */
 
 ENTRY(_start)
 
-/* Kernel loaded at 1MB */
-KERNEL_PHYS = 0x100000;
+/*
+ * Higher-half kernel layout:
+ * - Kernel virtual base: 0xFFFFFFFF80000000 (last 2GB)
+ * - Kernel physical base: 0x200000 (2MB) - must be 2MB aligned for large pages
+ * - This means virtual 0xFFFFFFFF80000000 maps to physical 0x200000
+ */
+
+KERNEL_VIRT_BASE = 0xFFFFFFFF80000000;
+KERNEL_PHYS_BASE = 0x200000;
+
+/* Calculate offset for address translation */
+KERNEL_OFFSET = KERNEL_VIRT_BASE - KERNEL_PHYS_BASE;
 
 SECTIONS
 {
-    . = KERNEL_PHYS;
+    /* Start at virtual address, but load at physical address */
+    . = KERNEL_VIRT_BASE;
+
+    /* Export symbols for kernel use */
+    _kernel_start = .;
+    _kernel_phys_start = . - KERNEL_OFFSET;
+
+    /*
+     * Boot section - executed before paging is fully set up
+     * This must be position-independent or identity-mapped
+     */
+    .boot ALIGN(4K) : AT(ADDR(.boot) - KERNEL_OFFSET)
+    {
+        _boot_start = .;
+        *(.boot)
+        *(.boot.*)
+        _boot_end = .;
+    }
 
     /* Code section */
-    .text ALIGN(4K) : AT(ADDR(.text))
+    .text ALIGN(4K) : AT(ADDR(.text) - KERNEL_OFFSET)
     {
+        _text_start = .;
         *(.text)
         *(.text.*)
+        _text_end = .;
     }
 
     /* Read-only data */
-    .rodata ALIGN(4K) : AT(ADDR(.rodata))
+    .rodata ALIGN(4K) : AT(ADDR(.rodata) - KERNEL_OFFSET)
     {
+        _rodata_start = .;
         *(.rodata)
         *(.rodata.*)
+        _rodata_end = .;
     }
 
     /* Initialized data */
-    .data ALIGN(4K) : AT(ADDR(.data))
+    .data ALIGN(4K) : AT(ADDR(.data) - KERNEL_OFFSET)
     {
+        _data_start = .;
         *(.data)
         *(.data.*)
+        _data_end = .;
     }
 
-    /* Uninitialized data */
-    .bss ALIGN(4K) : AT(ADDR(.bss))
+    /* Uninitialized data (BSS) */
+    .bss ALIGN(4K) : AT(ADDR(.bss) - KERNEL_OFFSET)
     {
+        _bss_start = .;
         *(COMMON)
         *(.bss)
         *(.bss.*)
+        _bss_end = .;
     }
 
     /* End of kernel */
+    . = ALIGN(4K);
     _kernel_end = .;
+    _kernel_phys_end = . - KERNEL_OFFSET;
+
+    /* Calculate kernel size */
+    _kernel_size = _kernel_end - _kernel_start;
+    _kernel_phys_size = _kernel_phys_end - _kernel_phys_start;
 
     /* Discard unwanted sections */
     /DISCARD/ :
@@ -47,5 +88,13 @@ SECTIONS
         *(.comment)
         *(.note.*)
         *(.eh_frame*)
+        *(.gnu.hash)
+        *(.dynsym)
+        *(.dynstr)
     }
 }
+
+/* Export useful symbols */
+PROVIDE(_kernel_virt_base = KERNEL_VIRT_BASE);
+PROVIDE(_kernel_phys_base = KERNEL_PHYS_BASE);
+PROVIDE(_kernel_offset = KERNEL_OFFSET);
