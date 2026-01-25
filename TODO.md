@@ -5,12 +5,13 @@
 ### Core Foundation
 0. [x] Testing and debug framework (serial output, assertions, panic handler)
 1. [x] Higher-half kernel + updated linker script
-2. [ ] GDT with TSS (kernel/user segments, per-CPU TSS)
-3. [ ] IDT + exception handlers (page fault, GPF, double fault, etc.)
-4. [ ] Physical memory manager (bitmap allocator, parse boot memory map)
-5. [ ] Virtual memory manager (page table management, map/unmap API)
-6. [ ] Kernel heap (kmalloc/kfree)
-7. [ ] Serial output + kprintf (enhance debug framework)
+2. [x] Global constructors/destructors
+3. [x] Stack smash protector
+4. [x] Physical memory manager (buddy allocator)
+5. [x] Virtual memory manager (page table management, map/unmap API)
+6. [ ] Kernel heap (slab allocator - kmalloc/kfree) **<-- NEXT**
+7. [ ] GDT with TSS (kernel/user segments, per-CPU TSS)
+8. [ ] IDT + exception handlers (page fault, GPF, double fault, etc.)
 
 ### Hardware Abstraction
 8. [ ] ACPI table parsing (find MADT, HPET, FADT)
@@ -19,12 +20,16 @@
 11. [ ] Basic spinlocks/mutexes
 
 ## In Progress
-- [ ] PMM (Buddy Allocator) - READY FOR USER VERIFICATION
-  - `make clean && make run-bios`
-  - Should see PMM stats and free lists
-  - Next: add alloc/free tests, then VMM
+(Paused - ready to resume)
+
+## Next Up
+- [ ] **Kernel heap (Slab Allocator)** - kmalloc/kfree for dynamic allocation
+  - Object caches for fixed-size allocations
+  - General-purpose kmalloc for variable sizes
 
 ## Completed Recently
+- [x] VMM (Virtual Memory Manager) - VERIFIED WORKING
+- [x] PMM (Buddy Allocator) - VERIFIED WORKING
 - [x] Stack smash protector - VERIFIED WORKING
 - [x] Global constructors/destructors - VERIFIED WORKING
 - [x] Debug framework + Higher-half kernel - VERIFIED WORKING

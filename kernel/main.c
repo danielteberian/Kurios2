@@ -4,6 +4,7 @@
 #include "debug/debug.h"
 #include "stack_protector.h"
 #include "mm/pmm.h"
+#include "mm/vmm.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/serial.h"
 #include "boot_info.h"
@@ -215,6 +216,77 @@ void kernel_main(BootInfo *boot_info) {
     /* Final stats */
     kprintf("\n=== PMM After Tests ===\n");
     pmm_dump_free_lists();
+
+    /* Initialize virtual memory manager */
+    vmm_init();
+
+    /* Test VMM */
+    kprintf("\n=== VMM Tests ===\n");
+
+    /* Test 1: Check existing kernel mapping */
+    uint64_t kernel_virt = 0xFFFFFFFF80000000UL;
+    uint64_t kernel_phys = vmm_get_phys(kernel_virt);
+    kprintf("  Test 1 - Kernel mapping: virt 0x%llx -> phys 0x%llx %s\n",
+            kernel_virt, kernel_phys,
+            (kernel_phys == 0x200000) ? "OK" : "FAIL");
+
+    /* Test 2: Map a new page */
+    uint64_t test_phys = alloc_page();
+    uint64_t test_virt = 0xFFFFFFFF90000000UL;  /* Unused kernel space */
+
+    int map_result = vmm_map_page(test_virt, test_phys, PTE_KERNEL_RW);
+    kprintf("  Test 2 - Map new page: %s\n", (map_result == 0) ? "OK" : "FAIL");
+
+    /* Test 3: Verify the mapping */
+    uint64_t verify_phys = vmm_get_phys(test_virt);
+    kprintf("  Test 3 - Verify mapping: 0x%llx -> 0x%llx %s\n",
+            test_virt, verify_phys,
+            (verify_phys == test_phys) ? "OK" : "FAIL");
+
+    /* Test 4: Write to the mapped page */
+    volatile uint64_t *ptr = (volatile uint64_t *)test_virt;
+    *ptr = 0xDEADBEEFCAFEBABEULL;
+    uint64_t read_back = *ptr;
+    kprintf("  Test 4 - Write/read: 0x%llx %s\n",
+            read_back,
+            (read_back == 0xDEADBEEFCAFEBABEULL) ? "OK" : "FAIL");
+
+    /* Test 5: Unmap the page */
+    uint64_t unmapped = vmm_unmap_page(test_virt);
+    kprintf("  Test 5 - Unmap: returned 0x%llx %s\n",
+            unmapped,
+            (unmapped == test_phys) ? "OK" : "FAIL");
+
+    /* Test 6: Verify unmapped */
+    bool still_mapped = vmm_is_mapped(test_virt);
+    kprintf("  Test 6 - Verify unmapped: %s\n",
+            (!still_mapped) ? "OK" : "FAIL");
+
+    /* Free the test page */
+    free_page(test_phys);
+
+    /* Test 7: Map multiple pages */
+    uint64_t multi_phys = alloc_pages(2);  /* 4 pages */
+    uint64_t multi_virt = 0xFFFFFFFF90001000UL;
+    map_result = vmm_map_pages(multi_virt, multi_phys, 4, PTE_KERNEL_RW);
+    kprintf("  Test 7 - Map 4 pages: %s\n", (map_result == 0) ? "OK" : "FAIL");
+
+    /* Verify all 4 pages */
+    bool all_ok = true;
+    for (int i = 0; i < 4; i++) {
+        if (vmm_get_phys(multi_virt + i * 0x1000) != multi_phys + i * 0x1000) {
+            all_ok = false;
+        }
+    }
+    kprintf("  Test 8 - Verify 4 pages: %s\n", all_ok ? "OK" : "FAIL");
+
+    /* Unmap and free */
+    vmm_unmap_pages(multi_virt, 4);
+    free_pages(multi_phys, 2);
+
+    /* Dump a PTE for debug */
+    kprintf("\n");
+    vmm_dump_pte(0xFFFFFFFF80000000UL);
 
     /* Print ACPI info if available */
     if (boot_info->flags & BOOT_FLAG_ACPI) {

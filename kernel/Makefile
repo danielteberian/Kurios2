@@ -13,7 +13,8 @@ C_SOURCES := \
     stack_protector.c \
     debug/debug.c \
     arch/x86_64/serial.c \
-    mm/pmm.c
+    mm/pmm.c \
+    mm/vmm.c
 
 # Object files
 ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(BUILD_DIR)/%.o)

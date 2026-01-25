@@ -39,6 +39,20 @@
   - hex_dump() utility
   - Register dump for exceptions
 
+### Memory Management [VERIFIED]
+- [2026-01-24] PMM: Buddy allocator (orders 0-10, 4KB-4MB blocks)
+  - Page descriptors (page_t) with flags, refcount
+  - alloc_pages()/free_pages() with buddy merging
+  - pmm_dump_stats()/pmm_dump_free_lists() for debug
+- [2026-01-24] VMM: Virtual memory manager
+  - 4-level page table walking (PML4/PDPT/PD/PT)
+  - Support for 4KB, 2MB, and 1GB pages
+  - vmm_map_page()/vmm_unmap_page()
+  - vmm_map_pages()/vmm_unmap_pages()
+  - vmm_get_phys()/vmm_is_mapped()
+  - Auto-allocates page tables on demand
+- [2026-01-24] Bootloader: Increased higher-half mapping to 128MB
+
 ### Stack Smash Protector [VERIFIED]
 - [2026-01-24] Created `stack_protector.c` with canary and fail handler
 - [2026-01-24] Randomized canary using TSC, RSP, CR3, function address
