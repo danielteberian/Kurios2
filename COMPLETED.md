@@ -17,7 +17,7 @@
 - [2026-01-24] UEFI Bootloader
 - [2026-01-24] Common boot protocol (BootInfo structure)
 
-### Debug Framework [BUILT - AWAITING VERIFICATION]
+### Debug Framework [VERIFIED]
 - [2026-01-24] Serial port driver (`arch/x86_64/serial.c`)
   - COM1 initialization at 115200 baud
   - Blocking putc/getc/puts/write functions
@@ -39,7 +39,15 @@
   - hex_dump() utility
   - Register dump for exceptions
 
-### Higher-Half Kernel [BUILT - AWAITING VERIFICATION]
+### Global Constructors/Destructors [VERIFIED]
+- [2026-01-24] Added `.init_array` section to linker.ld
+- [2026-01-24] Added `.fini_array` section to linker.ld
+- [2026-01-24] Constructor calling loop in entry.asm (before kernel_main)
+- [2026-01-24] `call_global_destructors()` function exported for shutdown
+- [2026-01-24] DEBUG_TESTS conditional compilation for test code
+- [2026-01-24] `make debug` / `make run-debug` targets for debug builds
+
+### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000
   - Kernel physical base: 0x100000 (1MB)

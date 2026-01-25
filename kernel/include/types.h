@@ -67,4 +67,7 @@ typedef uint64_t reg_t;         /* Register-sized value */
 #define STR(x)          #x
 #define XSTR(x)         STR(x)
 
+/* Runtime support (defined in entry.asm) */
+extern void call_global_destructors(void);
+
 #endif /* _KERNEL_TYPES_H */

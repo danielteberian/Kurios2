@@ -54,6 +54,24 @@ SECTIONS
         _rodata_end = .;
     }
 
+    /* Global constructors */
+    .init_array ALIGN(8) : AT(ADDR(.init_array) - KERNEL_OFFSET)
+    {
+        __init_array_start = .;
+        KEEP(*(.init_array))
+        KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+        __init_array_end = .;
+    }
+
+    /* Global destructors */
+    .fini_array ALIGN(8) : AT(ADDR(.fini_array) - KERNEL_OFFSET)
+    {
+        __fini_array_start = .;
+        KEEP(*(.fini_array))
+        KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)))
+        __fini_array_end = .;
+    }
+
     /* Initialized data */
     .data ALIGN(4K) : AT(ADDR(.data) - KERNEL_OFFSET)
     {

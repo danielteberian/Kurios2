@@ -33,9 +33,18 @@ INCLUDES := \
 KERNEL_CFLAGS := $(CFLAGS) $(INCLUDES)
 KERNEL_ASFLAGS := -f elf64 -g -F dwarf
 
-.PHONY: all clean
+# Debug build adds DEBUG_TESTS
+ifdef DEBUG
+KERNEL_CFLAGS += -DDEBUG_TESTS
+endif
+
+.PHONY: all clean debug
 
 all: $(KERNEL)
+
+# Debug build with tests enabled
+debug:
+	$(MAKE) DEBUG=1 all
 
 # Create build directories
 $(BUILD_DIR):

@@ -1,6 +1,6 @@
 # Kurios2 - Top Level Makefile
 
-.PHONY: all clean boot kernel image-bios image-uefi run-bios run-uefi
+.PHONY: all clean boot kernel image-bios image-uefi run-bios run-uefi debug run-debug
 
 # Build directories
 BUILD_DIR := build
@@ -15,6 +15,19 @@ boot:
 # Build kernel
 kernel:
 	$(MAKE) -C kernel
+
+# Debug build (with DEBUG_TESTS enabled)
+debug: boot
+	$(MAKE) -C kernel debug
+
+# Run debug build
+run-debug: debug image-bios
+	qemu-system-x86_64 \
+		-drive format=raw,file=$(BUILD_DIR)/kurios2-bios.img \
+		-m 256M \
+		-serial stdio \
+		-no-reboot \
+		-no-shutdown
 
 # Create BIOS bootable disk image
 image-bios: boot kernel

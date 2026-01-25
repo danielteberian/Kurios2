@@ -3,7 +3,21 @@
 #include "include/types.h"
 #include "debug/debug.h"
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/serial.h"
 #include "boot_info.h"
+
+#ifdef DEBUG_TESTS
+/* Test global constructor */
+static void test_constructor(void) {
+    /* Note: debug_init() hasn't been called yet, so use serial directly */
+    serial_init_default();
+    debug_puts("[CTOR] Global constructor called!\r\n");
+}
+
+/* Register constructor with priority 101 (runs early) */
+__attribute__((section(".init_array"), used))
+static void (*_test_ctor)(void) = test_constructor;
+#endif /* DEBUG_TESTS */
 
 /* Linker-provided symbols */
 extern uint64_t _kernel_start;

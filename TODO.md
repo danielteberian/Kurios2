@@ -21,8 +21,6 @@
 ## In Progress
 (None)
 
-## Blocked / Awaiting Verification
-- [x] #0 + #1: Debug framework + Higher-half kernel - **READY FOR TESTING**
-  - Test with: `make run-bios`
-  - Serial output visible in QEMU terminal (via -serial stdio)
-  - Should show debug messages and confirm higher-half execution
+## Completed Recently
+- [x] Global constructors/destructors - VERIFIED WORKING
+- [x] Debug framework + Higher-half kernel - VERIFIED WORKING

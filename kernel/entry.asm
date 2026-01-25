@@ -17,11 +17,16 @@ KERNEL_VIRT_BASE equ 0xFFFFFFFF80000000
 
 ; Exports
 global _start
+global call_global_destructors
 
 ; Imports
 extern kernel_main
 extern _bss_start
 extern _bss_end
+extern __init_array_start
+extern __init_array_end
+extern __fini_array_start
+extern __fini_array_end
 
 ; ============================================================================
 ; Kernel entry point
@@ -53,6 +58,22 @@ _start:
     xor rax, rax
     rep stosq
 
+    ; Call global constructors
+    ; __init_array_start and __init_array_end contain function pointers
+    mov rbx, __init_array_start
+    mov r14, __init_array_end
+.call_ctors:
+    cmp rbx, r14
+    jge .ctors_done
+    mov rax, [rbx]          ; Load function pointer
+    test rax, rax           ; Skip null pointers
+    jz .next_ctor
+    call rax                ; Call constructor
+.next_ctor:
+    add rbx, 8              ; Next pointer (8 bytes)
+    jmp .call_ctors
+.ctors_done:
+
     ; Restore boot_info pointer for kernel_main
     mov rdi, r15
 
@@ -64,6 +85,32 @@ _start:
     cli
     hlt
     jmp .halt
+
+; ============================================================================
+; Call global destructors (for shutdown)
+; Can be called from C: void call_global_destructors(void);
+; ============================================================================
+call_global_destructors:
+    push rbx
+    push r14
+
+    mov rbx, __fini_array_start
+    mov r14, __fini_array_end
+.call_dtors:
+    cmp rbx, r14
+    jge .dtors_done
+    mov rax, [rbx]
+    test rax, rax
+    jz .next_dtor
+    call rax
+.next_dtor:
+    add rbx, 8
+    jmp .call_dtors
+.dtors_done:
+
+    pop r14
+    pop rbx
+    ret
 
 ; ============================================================================
 ; BSS Section - Stack and other uninitialized data
