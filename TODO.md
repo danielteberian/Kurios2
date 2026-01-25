@@ -22,5 +22,6 @@
 (None)
 
 ## Completed Recently
+- [x] Stack smash protector - VERIFIED WORKING
 - [x] Global constructors/destructors - VERIFIED WORKING
 - [x] Debug framework + Higher-half kernel - VERIFIED WORKING

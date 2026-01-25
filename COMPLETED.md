@@ -39,6 +39,14 @@
   - hex_dump() utility
   - Register dump for exceptions
 
+### Stack Smash Protector [VERIFIED]
+- [2026-01-24] Created `stack_protector.c` with canary and fail handler
+- [2026-01-24] Randomized canary using TSC, RSP, CR3, function address
+- [2026-01-24] Canary has null byte in low position (stops string overflows)
+- [2026-01-24] Enabled `-fstack-protector-strong` in toolchain/config.mk
+- [2026-01-24] `stack_protector_init()` called early in kernel_main
+- [2026-01-24] Test function available in DEBUG_TESTS mode
+
 ### Global Constructors/Destructors [VERIFIED]
 - [2026-01-24] Added `.init_array` section to linker.ld
 - [2026-01-24] Added `.fini_array` section to linker.ld

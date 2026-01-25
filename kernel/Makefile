@@ -10,6 +10,7 @@ SRC_DIR := .
 ASM_SOURCES := entry.asm
 C_SOURCES := \
     main.c \
+    stack_protector.c \
     debug/debug.c \
     arch/x86_64/serial.c
 

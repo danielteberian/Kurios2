@@ -22,8 +22,7 @@ FREESTANDING_FLAGS := \
     -fno-builtin \
     -nostdlib \
     -nostdinc \
-    -fno-stack-protector \
-    -fno-stack-check \
+    -fstack-protector-strong \
     -fno-lto \
     -fno-PIC \
     -fno-PIE \

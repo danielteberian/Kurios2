@@ -2,6 +2,7 @@
 
 #include "include/types.h"
 #include "debug/debug.h"
+#include "stack_protector.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/serial.h"
 #include "boot_info.h"
@@ -17,6 +18,23 @@ static void test_constructor(void) {
 /* Register constructor with priority 101 (runs early) */
 __attribute__((section(".init_array"), used))
 static void (*_test_ctor)(void) = test_constructor;
+
+/*
+ * Test stack smashing detection.
+ * This function intentionally corrupts its stack canary.
+ * Only enable this to test that stack protection works!
+ */
+__attribute__((noinline, optimize("O0")))
+static void test_stack_smash(void) {
+    char buf[16];
+    volatile char *p = buf;
+    /* Overflow the buffer to corrupt the stack canary */
+    for (volatile int i = 0; i < 64; i++) {
+        p[i] = 'A';
+    }
+    /* If stack protection works, we should never reach here */
+    kprintf("ERROR: Stack smash was not detected!\n");
+}
 #endif /* DEBUG_TESTS */
 
 /* Linker-provided symbols */
@@ -60,6 +78,9 @@ static uint64_t calculate_usable_memory(BootInfo *boot_info) {
 void kernel_main(BootInfo *boot_info) {
     /* Initialize debug subsystem first */
     debug_init();
+
+    /* Initialize stack protector with randomized canary */
+    stack_protector_init();
 
     kprintf("\n");
     INFO("Kurios2 Kernel Starting...");
@@ -165,6 +186,14 @@ void kernel_main(BootInfo *boot_info) {
     /* Test assertion (should pass) */
     ASSERT(1 == 1);
     INFO("Assertion test passed");
+
+#ifdef DEBUG_TESTS
+    /*
+     * Uncomment to test stack smash detection (will panic):
+     * INFO("Testing stack smash detection...");
+     * test_stack_smash();
+     */
+#endif
 
     /* Print completion message */
     kprintf("\n");
