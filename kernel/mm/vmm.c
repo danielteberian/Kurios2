@@ -39,7 +39,6 @@ static page_table_t get_pml4(void) {
  */
 static page_table_t alloc_page_table(void) {
     uint64_t phys = alloc_page();
-    kprintf("  [VMM] alloc_page_table: phys=0x%llx\n", phys);
     if (phys == 0) {
         ERROR("Failed to allocate page table");
         return NULL;
@@ -47,11 +46,9 @@ static page_table_t alloc_page_table(void) {
 
     /* Zero the page table */
     page_table_t table = (page_table_t)phys_to_virt(phys);
-    kprintf("  [VMM] alloc_page_table: virt=%p (will zero)\n", table);
     for (int i = 0; i < ENTRIES_PER_TABLE; i++) {
         table[i] = 0;
     }
-    kprintf("  [VMM] alloc_page_table: zeroed OK\n");
 
     return table;
 }
@@ -110,23 +107,11 @@ void vmm_init(void) {
  * Get or create a page table entry
  */
 pte_t* vmm_get_pte(uint64_t virt, bool create) {
-    serial_putc(0x3F8, 'G');
-
-    /* Always print the virtual address as hex for debugging */
-    serial_puts(0x3F8, "[");
-    for (int shift = 60; shift >= 0; shift -= 4) {
-        int digit = (virt >> shift) & 0xF;
-        serial_putc(0x3F8, digit < 10 ? '0' + digit : 'a' + digit - 10);
-    }
-    serial_puts(0x3F8, "]");
-
     page_table_t pml4 = get_pml4();
-    serial_putc(0x3F8, '1');
 
     /* Get PML4 entry */
     uint64_t pml4_idx = PML4_INDEX(virt);
     pte_t* pml4e = &pml4[pml4_idx];
-    serial_putc(0x3F8, '2');
 
     /* Get or create PDPT */
     page_table_t pdpt;
@@ -134,7 +119,7 @@ pte_t* vmm_get_pte(uint64_t virt, bool create) {
         pdpt = pte_to_table(*pml4e);
     } else if (create) {
         pdpt = alloc_page_table();
-        if (!pdpt) { DEBUG("vmm_get_pte: failed to alloc PDPT"); return NULL; }
+        if (!pdpt) return NULL;
         *pml4e = table_to_phys(pdpt) | PTE_PRESENT | PTE_WRITABLE;
     } else {
         return NULL;
@@ -142,73 +127,45 @@ pte_t* vmm_get_pte(uint64_t virt, bool create) {
 
     /* Get PDPT entry */
     uint64_t pdpt_idx = PDPT_INDEX(virt);
-    serial_putc(0x3F8, '3');
     pte_t* pdpte = &pdpt[pdpt_idx];
 
     /* Check for 1GB huge page */
     if ((*pdpte & PTE_PRESENT) && (*pdpte & PTE_HUGE)) {
         return NULL;
     }
-    serial_putc(0x3F8, '4');
 
     /* Get or create PD */
     page_table_t pd;
     if (*pdpte & PTE_PRESENT) {
         pd = pte_to_table(*pdpte);
-        serial_putc(0x3F8, 'P');
     } else if (create) {
-        serial_putc(0x3F8, 'p');
         pd = alloc_page_table();
         if (!pd) return NULL;
         *pdpte = table_to_phys(pd) | PTE_PRESENT | PTE_WRITABLE;
     } else {
         return NULL;
     }
-    serial_putc(0x3F8, '5');
 
     /* Get PD entry */
     uint64_t pd_idx = PD_INDEX(virt);
-    serial_putc(0x3F8, '6');
     pte_t* pde = &pd[pd_idx];
 
     /* Check for 2MB huge page */
-    serial_putc(0x3F8, '7');
     if ((*pde & PTE_PRESENT) && (*pde & PTE_HUGE)) {
-        serial_putc(0x3F8, 'H');
-        serial_puts(0x3F8, "\nHUGE: pd_idx=");
-        /* Print pd_idx as decimal */
-        char buf[20];
-        int i = 0;
-        uint64_t tmp = pd_idx;
-        if (tmp == 0) buf[i++] = '0';
-        else {
-            char rev[20];
-            int j = 0;
-            while (tmp > 0) { rev[j++] = '0' + (tmp % 10); tmp /= 10; }
-            while (j > 0) buf[i++] = rev[--j];
-        }
-        buf[i] = '\0';
-        serial_puts(0x3F8, buf);
-        serial_puts(0x3F8, "\n");
         return NULL;
     }
-    serial_putc(0x3F8, '8');
 
     /* Get or create PT */
     page_table_t pt;
     if (*pde & PTE_PRESENT) {
         pt = pte_to_table(*pde);
-        serial_putc(0x3F8, 'T');
     } else if (create) {
-        serial_putc(0x3F8, 't');
         pt = alloc_page_table();
-        if (!pt) { serial_putc(0x3F8, '!'); return NULL; }
+        if (!pt) return NULL;
         *pde = table_to_phys(pt) | PTE_PRESENT | PTE_WRITABLE;
-        serial_putc(0x3F8, 'w');
     } else {
         return NULL;
     }
-    serial_putc(0x3F8, '9');
 
     /* Get PT entry */
     uint64_t pt_idx = PT_INDEX(virt);

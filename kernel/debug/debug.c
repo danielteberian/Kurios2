@@ -178,7 +178,12 @@ static int format_print(const char *fmt, va_list args) {
 
         /* Flags */
         char pad = ' ';
-        if (*fmt == '0') {
+        bool left_justify = false;
+        if (*fmt == '-') {
+            left_justify = true;
+            fmt++;
+        }
+        if (*fmt == '0' && !left_justify) {
             pad = '0';
             fmt++;
         }
@@ -256,11 +261,21 @@ static int format_print(const char *fmt, va_list args) {
                 int len = 0;
                 const char *s = str;
                 while (*s++) len++;
-                while (len < width) {
-                    output_char(' ');
-                    len++;
+                if (!left_justify) {
+                    /* Right-justify: pad before string */
+                    while (len < width) {
+                        output_char(' ');
+                        len++;
+                    }
                 }
                 output_string(str);
+                if (left_justify) {
+                    /* Left-justify: pad after string */
+                    while (len < width) {
+                        output_char(' ');
+                        len++;
+                    }
+                }
                 break;
             }
 
