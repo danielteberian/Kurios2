@@ -187,19 +187,21 @@ void exception_handler(cpu_state_t *state) {
 void irq_handler(cpu_state_t *state) {
     uint8_t irq = state->int_no - IRQ_BASE;
 
-    /* Call registered handler if any */
-    if (handlers[state->int_no]) {
-        handlers[state->int_no](state);
-    }
-
-    /* Send EOI (End of Interrupt) to PIC
-     * For now we use the legacy PIC; later we'll switch to APIC */
+    /* Send EOI (End of Interrupt) to PIC BEFORE calling handler
+     * This is important because handlers (like the scheduler) may
+     * context switch and never return to this function.
+     * We need the PIC to allow more interrupts. */
     if (irq >= 8) {
         /* Send EOI to slave PIC */
         outb(0xA0, 0x20);
     }
     /* Send EOI to master PIC */
     outb(0x20, 0x20);
+
+    /* Call registered handler if any */
+    if (handlers[state->int_no]) {
+        handlers[state->int_no](state);
+    }
 }
 
 /*

@@ -17,6 +17,8 @@
 #include "drivers/keyboard.h"
 #include "drivers/vga.h"
 #include "drivers/pit.h"
+#include "sched/thread.h"
+#include "sched/sched.h"
 #include "boot_info.h"
 
 #ifdef DEBUG_TESTS
@@ -48,6 +50,22 @@ static void test_stack_smash(void) {
     kprintf("ERROR: Stack smash was not detected!\n");
 }
 #endif /* DEBUG_TESTS */
+
+/*
+ * Demo thread function - prints messages periodically
+ */
+static void demo_thread(void *arg) {
+    int id = (int)(uint64_t)arg;
+    int count = 0;
+
+    while (count < 5) {
+        kprintf("[Thread %d] count=%d\n", id, count);
+        count++;
+        thread_sleep_ms(500);  /* Sleep 500ms */
+    }
+
+    kprintf("[Thread %d] exiting\n", id);
+}
 
 /* Linker-provided symbols */
 extern uint64_t _kernel_start;
@@ -315,6 +333,22 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize PIT timer at 100 Hz (10ms tick) */
     pit_init(100);
+
+    /* Initialize threading subsystem */
+    thread_init();
+
+    /* Create demo threads */
+    thread_t *t1 = thread_create("worker1", demo_thread, (void *)1);
+    thread_t *t2 = thread_create("worker2", demo_thread, (void *)2);
+
+    if (t1 && t2) {
+        INFO("Created demo threads: TID %u, TID %u", t1->tid, t2->tid);
+    } else {
+        ERROR("Failed to create demo threads");
+    }
+
+    /* Start the scheduler */
+    sched_start();
 
 #ifdef TEST_MODE
     /* Run all kernel tests */

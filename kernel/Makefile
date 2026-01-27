@@ -7,7 +7,7 @@ BUILD_DIR := ../build/kernel
 SRC_DIR := .
 
 # Source files
-ASM_SOURCES := entry.asm arch/x86_64/gdt_flush.asm arch/x86_64/isr.asm
+ASM_SOURCES := entry.asm arch/x86_64/gdt_flush.asm arch/x86_64/isr.asm sched/context.asm
 C_SOURCES := \
     main.c \
     stack_protector.c \
@@ -20,7 +20,9 @@ C_SOURCES := \
     mm/slab.c \
     drivers/keyboard.c \
     drivers/vga.c \
-    drivers/pit.c
+    drivers/pit.c \
+    sched/thread.c \
+    sched/sched.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
@@ -87,6 +89,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/mm
 	mkdir -p $(BUILD_DIR)/sync
 	mkdir -p $(BUILD_DIR)/drivers
+	mkdir -p $(BUILD_DIR)/sched
 	mkdir -p $(BUILD_DIR)/tests
 
 # Ensure directories exist before compiling

@@ -4,6 +4,8 @@
 #include "../arch/x86_64/io.h"
 #include "../arch/x86_64/idt.h"
 #include "../arch/x86_64/cpu.h"
+#include "../sched/sched.h"
+#include "../sched/thread.h"
 #include "../debug/debug.h"
 
 /* PIT I/O ports */
@@ -39,6 +41,11 @@ static uint32_t timer_frequency = 0;
 static void pit_handler(cpu_state_t *state) {
     (void)state;
     tick_count++;
+
+    /* Call scheduler tick if threading is initialized */
+    if (thread_is_initialized()) {
+        sched_tick();
+    }
 }
 
 /*

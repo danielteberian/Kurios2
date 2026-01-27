@@ -69,6 +69,31 @@
 - [2026-01-24] DEBUG_TESTS conditional compilation for test code
 - [2026-01-24] `make debug` / `make run-debug` targets for debug builds
 
+### Multithreading [VERIFIED]
+- [2026-01-27] Round-robin preemptive scheduler
+  - 100ms time slices (10 ticks at 100Hz PIT)
+  - Ready queue (doubly-linked list)
+  - Thread states: READY, RUNNING, BLOCKED, SLEEPING, TERMINATED
+- [2026-01-27] Thread management (`kernel/sched/thread.c`)
+  - Thread Control Block (TCB) structure
+  - thread_create() with 16KB stacks
+  - thread_yield(), thread_sleep_ms(), thread_block/unblock()
+  - thread_exit() with proper cleanup
+  - Idle thread for CPU halt when no work
+- [2026-01-27] Context switching (`kernel/sched/context.asm`)
+  - Callee-saved register preservation (rbp, rbx, r12-r15, rflags)
+  - Thread entry trampoline for new threads
+- [2026-01-27] Scheduler (`kernel/sched/sched.c`)
+  - sched_init(), sched_start(), sched_tick()
+  - sched_reschedule() for voluntary/preemptive switching
+  - sched_ready(), sched_remove() for queue management
+  - Wake sleeping threads on timer tick
+- [2026-01-27] IRQ-safe spinlocks (`kernel/sync/spinlock.h`)
+  - spin_lock_irqsave() / spin_unlock_irqrestore()
+  - Interrupt flag preservation across locks
+- [2026-01-27] Critical fix: EOI sent before handler in IRQ handler
+  - Allows context switching from interrupt context
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

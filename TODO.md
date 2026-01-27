@@ -23,7 +23,7 @@
 12. [ ] Multiboot2 support (alternative to custom bootloader)
 
 ### Process Management
-13. [ ] Multithreading (kernel threads, scheduler, context switching)
+13. [x] Multithreading (kernel threads, scheduler, context switching)
 14. [ ] Process abstraction (address spaces, process control blocks)
 
 ### Device Drivers
@@ -36,12 +36,14 @@
 19. [ ] Filesystem driver (ext2, FAT32, or custom)
 
 ## In Progress
-(Paused - ready to resume)
+(None)
 
 ## Next Up
 - [ ] **ACPI table parsing** - Find MADT, HPET, FADT
+- [ ] **Process abstraction** - Address spaces, process control blocks
 
 ## Completed Recently
+- [x] Multithreading - VERIFIED WORKING (round-robin scheduler, context switching, preemption)
 - [x] PIT Timer (100Hz) - VERIFIED WORKING (uptime, sleep_ms)
 - [x] VGA text mode driver - VERIFIED WORKING
 - [x] Keyboard driver (PS/2) - VERIFIED WORKING (IRQ1, US layout, extended keys)
