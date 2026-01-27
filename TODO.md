@@ -16,7 +16,7 @@
 ### Hardware Abstraction
 8. [ ] ACPI table parsing (find MADT, HPET, FADT)
 9. [ ] APIC setup (Local APIC + I/O APIC, replace legacy PIC)
-10. [ ] Timer (APIC timer or HPET, PIT as fallback)
+10. [x] Timer (PIT at 100Hz)
 11. [x] Basic spinlocks/mutexes
 
 ### Boot Protocol
@@ -42,7 +42,9 @@
 - [ ] **ACPI table parsing** - Find MADT, HPET, FADT
 
 ## Completed Recently
-- [x] Keyboard driver (PS/2) - VERIFIED WORKING (IRQ1, US layout)
+- [x] PIT Timer (100Hz) - VERIFIED WORKING (uptime, sleep_ms)
+- [x] VGA text mode driver - VERIFIED WORKING
+- [x] Keyboard driver (PS/2) - VERIFIED WORKING (IRQ1, US layout, extended keys)
 - [x] Basic spinlocks/mutexes - VERIFIED WORKING (4 tests)
 - [x] IDT + Exception Handlers - VERIFIED WORKING
 - [x] GDT with TSS - VERIFIED WORKING

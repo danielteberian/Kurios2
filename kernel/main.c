@@ -16,6 +16,7 @@
 #include "arch/x86_64/serial.h"
 #include "drivers/keyboard.h"
 #include "drivers/vga.h"
+#include "drivers/pit.h"
 #include "boot_info.h"
 
 #ifdef DEBUG_TESTS
@@ -312,6 +313,9 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize VGA text mode */
     vga_init();
 
+    /* Initialize PIT timer at 100 Hz (10ms tick) */
+    pit_init(100);
+
 #ifdef TEST_MODE
     /* Run all kernel tests */
     run_all_tests();
@@ -400,7 +404,8 @@ void kernel_main(BootInfo *boot_info) {
         }
 
         if (c == '\n') {
-            kprintf("\n> ");
+            uint64_t uptime = pit_get_uptime_ms();
+            kprintf(" [%llu.%03llus]\n> ", uptime / 1000, uptime % 1000);
             vga_puts("\n> ");
         } else if (c == '\b' || c == KEY_DELETE) {
             /* Backspace and Delete both erase */
