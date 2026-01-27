@@ -25,7 +25,9 @@ static volatile bool shift_pressed = false;
 static volatile bool ctrl_pressed = false;
 static volatile bool alt_pressed = false;
 static volatile bool caps_lock = false;
+static volatile bool extended_key = false;  /* E0 prefix received */
 
+/* Special scancodes */
 /* Special scancodes */
 #define SC_LSHIFT_PRESS   0x2A
 #define SC_LSHIFT_RELEASE 0xAA
@@ -36,6 +38,31 @@ static volatile bool caps_lock = false;
 #define SC_ALT_PRESS      0x38
 #define SC_ALT_RELEASE    0xB8
 #define SC_CAPS_LOCK      0x3A
+#define SC_EXTENDED       0xE0
+
+/* Extended key scancodes (after 0xE0 prefix) */
+#define SC_EXT_UP         0x48
+#define SC_EXT_DOWN       0x50
+#define SC_EXT_LEFT       0x4B
+#define SC_EXT_RIGHT      0x4D
+#define SC_EXT_DELETE     0x53
+#define SC_EXT_HOME       0x47
+#define SC_EXT_END        0x4F
+#define SC_EXT_PGUP       0x49
+#define SC_EXT_PGDN       0x51
+#define SC_EXT_INSERT     0x52
+
+/* Special key codes (returned as negative chars or high values) */
+#define KEY_UP            0x80
+#define KEY_DOWN          0x81
+#define KEY_LEFT          0x82
+#define KEY_RIGHT         0x83
+#define KEY_DELETE        0x7F
+#define KEY_HOME          0x84
+#define KEY_END           0x85
+#define KEY_PGUP          0x86
+#define KEY_PGDN          0x87
+#define KEY_INSERT        0x88
 
 /* US keyboard scancode to ASCII (lowercase) */
 static const char scancode_to_ascii[128] = {
@@ -105,6 +132,42 @@ static void keyboard_handler(cpu_state_t *state) {
     (void)state;
 
     uint8_t scancode = inb(KBD_DATA_PORT);
+
+    /* Handle extended scancode prefix */
+    if (scancode == SC_EXTENDED) {
+        extended_key = true;
+        return;
+    }
+
+    /* Handle extended keys */
+    if (extended_key) {
+        extended_key = false;
+
+        /* Extended key releases */
+        if (scancode & 0x80) {
+            uint8_t released = scancode & 0x7F;
+            if (released == SC_CTRL_PRESS) ctrl_pressed = false;
+            if (released == SC_ALT_PRESS) alt_pressed = false;
+            return;
+        }
+
+        /* Extended key presses */
+        switch (scancode) {
+            case SC_CTRL_PRESS:  ctrl_pressed = true; return;
+            case SC_ALT_PRESS:   alt_pressed = true; return;
+            case SC_EXT_UP:      kbd_buffer_put(KEY_UP); return;
+            case SC_EXT_DOWN:    kbd_buffer_put(KEY_DOWN); return;
+            case SC_EXT_LEFT:    kbd_buffer_put(KEY_LEFT); return;
+            case SC_EXT_RIGHT:   kbd_buffer_put(KEY_RIGHT); return;
+            case SC_EXT_DELETE:  kbd_buffer_put(KEY_DELETE); return;
+            case SC_EXT_HOME:    kbd_buffer_put(KEY_HOME); return;
+            case SC_EXT_END:     kbd_buffer_put(KEY_END); return;
+            case SC_EXT_PGUP:    kbd_buffer_put(KEY_PGUP); return;
+            case SC_EXT_PGDN:    kbd_buffer_put(KEY_PGDN); return;
+            case SC_EXT_INSERT:  kbd_buffer_put(KEY_INSERT); return;
+        }
+        return;
+    }
 
     /* Handle modifier keys */
     switch (scancode) {

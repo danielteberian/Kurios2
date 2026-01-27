@@ -402,10 +402,15 @@ void kernel_main(BootInfo *boot_info) {
         if (c == '\n') {
             kprintf("\n> ");
             vga_puts("\n> ");
-        } else if (c == '\b') {
+        } else if (c == '\b' || c == KEY_DELETE) {
+            /* Backspace and Delete both erase */
             kprintf("\b \b");
             vga_putc('\b');
-        } else {
+        } else if ((uint8_t)c >= 0x80) {
+            /* Ignore other special keys (arrows, etc.) for now */
+            continue;
+        } else if (c >= 0x20) {
+            /* Printable characters */
             kprintf("%c", c);
             vga_putc(c);
         }
