@@ -15,6 +15,7 @@
 #include "arch/x86_64/idt.h"
 #include "arch/x86_64/serial.h"
 #include "drivers/keyboard.h"
+#include "drivers/vga.h"
 #include "boot_info.h"
 
 #ifdef DEBUG_TESTS
@@ -308,6 +309,9 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize keyboard driver */
     keyboard_init();
 
+    /* Initialize VGA text mode */
+    vga_init();
+
 #ifdef TEST_MODE
     /* Run all kernel tests */
     run_all_tests();
@@ -376,8 +380,14 @@ void kernel_main(BootInfo *boot_info) {
     /* Enable interrupts for keyboard */
     sti();
 
+    /* Show prompt on both serial and VGA */
     kprintf("\n");
     kprintf("Keyboard ready. Type something (Ctrl+C to halt):\n> ");
+
+    vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
+    vga_puts("Kurios2 Kernel Ready!\n\n");
+    vga_set_color(VGA_WHITE, VGA_BLACK);
+    vga_puts("Type something (Ctrl+C to halt):\n> ");
 
     /* Simple keyboard echo loop */
     while (1) {
@@ -385,15 +395,19 @@ void kernel_main(BootInfo *boot_info) {
 
         if (keyboard_ctrl_pressed() && c == 'c') {
             kprintf("\n\nCtrl+C pressed. Halting.\n");
+            vga_puts("\n\nHalting...\n");
             break;
         }
 
         if (c == '\n') {
             kprintf("\n> ");
+            vga_puts("\n> ");
         } else if (c == '\b') {
-            kprintf("\b \b");  /* Backspace: move back, clear, move back */
+            kprintf("\b \b");
+            vga_putc('\b');
         } else {
             kprintf("%c", c);
+            vga_putc(c);
         }
     }
 

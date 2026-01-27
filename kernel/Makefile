@@ -18,7 +18,8 @@ C_SOURCES := \
     mm/pmm.c \
     mm/vmm.c \
     mm/slab.c \
-    drivers/keyboard.c
+    drivers/keyboard.c \
+    drivers/vga.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
