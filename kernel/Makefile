@@ -7,13 +7,14 @@ BUILD_DIR := ../build/kernel
 SRC_DIR := .
 
 # Source files
-ASM_SOURCES := entry.asm arch/x86_64/gdt_flush.asm
+ASM_SOURCES := entry.asm arch/x86_64/gdt_flush.asm arch/x86_64/isr.asm
 C_SOURCES := \
     main.c \
     stack_protector.c \
     debug/debug.c \
     arch/x86_64/serial.c \
     arch/x86_64/gdt.c \
+    arch/x86_64/idt.c \
     mm/pmm.c \
     mm/vmm.c \
     mm/slab.c

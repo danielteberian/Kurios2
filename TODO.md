@@ -10,8 +10,8 @@
 4. [x] Physical memory manager (buddy allocator)
 5. [x] Virtual memory manager (page table management, map/unmap API)
 6. [x] Kernel heap (slab allocator - kmalloc/kfree)
-7. [ ] GDT with TSS (kernel/user segments, per-CPU TSS) **<-- NEXT**
-8. [ ] IDT + exception handlers (page fault, GPF, double fault, etc.)
+7. [x] GDT with TSS (kernel/user segments, per-CPU TSS)
+8. [ ] IDT + exception handlers (page fault, GPF, double fault, etc.) **<-- NEXT**
 
 ### Hardware Abstraction
 8. [ ] ACPI table parsing (find MADT, HPET, FADT)
@@ -23,12 +23,13 @@
 (Paused - ready to resume)
 
 ## Next Up
-- [ ] **GDT with TSS** - Proper segment descriptors for kernel/user mode
-  - Kernel code/data segments
-  - User code/data segments
-  - Task State Segment (TSS) for interrupt stack switching
+- [ ] **IDT + Exception Handlers** - Interrupt handling
+  - IDT setup with 256 entries
+  - CPU exception handlers (divide error, page fault, GPF, double fault, etc.)
+  - IST stacks for critical exceptions
 
 ## Completed Recently
+- [x] GDT with TSS - VERIFIED WORKING
 - [x] Slab Allocator (kmalloc/kfree) - VERIFIED WORKING (14 tests)
 - [x] VMM (Virtual Memory Manager) - VERIFIED WORKING
 - [x] PMM (Buddy Allocator) - VERIFIED WORKING

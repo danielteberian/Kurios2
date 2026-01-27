@@ -3,6 +3,7 @@
 #define _ARCH_CPU_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 /* CPU register state (for exception handlers, etc.) */
 typedef struct {
