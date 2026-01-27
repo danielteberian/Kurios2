@@ -27,7 +27,7 @@
 14. [ ] Process abstraction (address spaces, process control blocks)
 
 ### Device Drivers
-15. [ ] Keyboard driver (PS/2 keyboard via IRQ1)
+15. [x] Keyboard driver (PS/2 keyboard via IRQ1)
 16. [ ] Additional input devices (mouse, etc.)
 
 ### Filesystem
@@ -42,6 +42,7 @@
 - [ ] **ACPI table parsing** - Find MADT, HPET, FADT
 
 ## Completed Recently
+- [x] Keyboard driver (PS/2) - VERIFIED WORKING (IRQ1, US layout)
 - [x] Basic spinlocks/mutexes - VERIFIED WORKING (4 tests)
 - [x] IDT + Exception Handlers - VERIFIED WORKING
 - [x] GDT with TSS - VERIFIED WORKING

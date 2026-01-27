@@ -14,6 +14,7 @@
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/idt.h"
 #include "arch/x86_64/serial.h"
+#include "drivers/keyboard.h"
 #include "boot_info.h"
 
 #ifdef DEBUG_TESTS
@@ -304,6 +305,9 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize slab allocator (kernel heap) */
     slab_init();
 
+    /* Initialize keyboard driver */
+    keyboard_init();
+
 #ifdef TEST_MODE
     /* Run all kernel tests */
     run_all_tests();
@@ -367,9 +371,34 @@ void kernel_main(BootInfo *boot_info) {
     kprintf("=============================================\n");
     kprintf("\n");
 
-    INFO("Kernel initialization complete. Halting.");
+    INFO("Kernel initialization complete.");
 
-    /* Halt - in future this will start the scheduler */
+    /* Enable interrupts for keyboard */
+    sti();
+
+    kprintf("\n");
+    kprintf("Keyboard ready. Type something (Ctrl+C to halt):\n> ");
+
+    /* Simple keyboard echo loop */
+    while (1) {
+        char c = keyboard_getchar();
+
+        if (keyboard_ctrl_pressed() && c == 'c') {
+            kprintf("\n\nCtrl+C pressed. Halting.\n");
+            break;
+        }
+
+        if (c == '\n') {
+            kprintf("\n> ");
+        } else if (c == '\b') {
+            kprintf("\b \b");  /* Backspace: move back, clear, move back */
+        } else {
+            kprintf("%c", c);
+        }
+    }
+
+    /* Halt */
+    cli();
     while (1) {
         hlt();
     }

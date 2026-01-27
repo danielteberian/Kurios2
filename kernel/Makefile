@@ -17,7 +17,8 @@ C_SOURCES := \
     arch/x86_64/idt.c \
     mm/pmm.c \
     mm/vmm.c \
-    mm/slab.c
+    mm/slab.c \
+    drivers/keyboard.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
@@ -83,6 +84,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/arch/x86_64
 	mkdir -p $(BUILD_DIR)/mm
 	mkdir -p $(BUILD_DIR)/sync
+	mkdir -p $(BUILD_DIR)/drivers
 	mkdir -p $(BUILD_DIR)/tests
 
 # Ensure directories exist before compiling
