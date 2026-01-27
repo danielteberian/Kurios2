@@ -5,6 +5,11 @@
 #include "stack_protector.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
+#include "mm/slab.h"
+
+#ifdef TEST_MODE
+#include "tests/tests.h"
+#endif
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/serial.h"
 #include "boot_info.h"
@@ -287,6 +292,26 @@ void kernel_main(BootInfo *boot_info) {
     /* Dump a PTE for debug */
     kprintf("\n");
     vmm_dump_pte(0xFFFFFFFF80000000UL);
+
+    /* Initialize slab allocator (kernel heap) */
+    slab_init();
+
+#ifdef TEST_MODE
+    /* Run all kernel tests */
+    run_all_tests();
+
+    /* After tests, dump slab stats and halt */
+    slab_dump_stats();
+
+    kprintf("\n");
+    kprintf("============================================================\n");
+    kprintf("  Test run complete. System halting.\n");
+    kprintf("============================================================\n");
+
+    while (1) {
+        hlt();
+    }
+#endif
 
     /* Print ACPI info if available */
     if (boot_info->flags & BOOT_FLAG_ACPI) {

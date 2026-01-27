@@ -1,6 +1,6 @@
 # Kurios2 - Top Level Makefile
 
-.PHONY: all clean boot kernel image-bios image-uefi run-bios run-uefi debug run-debug
+.PHONY: all clean boot kernel image-bios image-uefi run-bios run-uefi debug run-debug test run-test
 
 # Build directories
 BUILD_DIR := build
@@ -21,7 +21,7 @@ debug: boot
 	$(MAKE) -C kernel debug
 
 # Run debug build
-run-debug: debug image-bios
+run-debug: debug _image-bios
 	qemu-system-x86_64 \
 		-drive format=raw,file=$(BUILD_DIR)/kurios2-bios.img \
 		-m 256M \
@@ -29,8 +29,21 @@ run-debug: debug image-bios
 		-no-reboot \
 		-no-shutdown
 
-# Create BIOS bootable disk image
-image-bios: boot kernel
+# Build with test framework
+test: boot
+	$(MAKE) -C kernel test
+
+# Run tests (build and execute in QEMU)
+run-test: test _image-bios
+	qemu-system-x86_64 \
+		-drive format=raw,file=$(BUILD_DIR)/kurios2-bios.img \
+		-m 256M \
+		-serial stdio \
+		-no-reboot \
+		-no-shutdown
+
+# Create BIOS bootable disk image (internal, no deps - used after test/debug builds)
+_image-bios:
 	@echo "Creating BIOS bootable disk image..."
 	@mkdir -p $(BUILD_DIR)
 	# Create disk image (1.44MB floppy size for testing)
@@ -40,6 +53,9 @@ image-bios: boot kernel
 	# Write kernel starting at sector 34 (after stage1 + stage2)
 	dd if=$(BUILD_DIR)/kernel/kernel.bin of=$(BUILD_DIR)/kurios2-bios.img bs=512 seek=34 conv=notrunc 2>/dev/null
 	@echo "BIOS image: $(BUILD_DIR)/kurios2-bios.img"
+
+# Create BIOS bootable disk image (public, with deps)
+image-bios: boot kernel _image-bios
 
 # Create UEFI bootable disk image
 image-uefi: boot kernel
@@ -118,9 +134,13 @@ help:
 	@echo "  all         - Build bootloader and kernel"
 	@echo "  boot        - Build bootloader only"
 	@echo "  kernel      - Build kernel only"
+	@echo "  debug       - Build with DEBUG_TESTS enabled"
+	@echo "  test        - Build with test framework"
+	@echo "  run-test    - Build and run kernel tests in QEMU"
 	@echo "  image-bios  - Create BIOS bootable disk image"
 	@echo "  image-uefi  - Create UEFI bootable disk image"
 	@echo "  image-iso   - Create hybrid ISO (requires grub-mkrescue)"
 	@echo "  run-bios    - Run in QEMU with BIOS"
 	@echo "  run-uefi    - Run in QEMU with UEFI (requires OVMF)"
+	@echo "  run-debug   - Run debug build in QEMU"
 	@echo "  clean       - Remove all build artifacts"

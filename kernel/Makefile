@@ -14,12 +14,27 @@ C_SOURCES := \
     debug/debug.c \
     arch/x86_64/serial.c \
     mm/pmm.c \
-    mm/vmm.c
+    mm/vmm.c \
+    mm/slab.c
+
+# Test source files (only included in test builds)
+TEST_SOURCES := \
+    tests/test_framework.c \
+    tests/test_all.c \
+    tests/test_pmm.c \
+    tests/test_vmm.c \
+    tests/test_slab.c
 
 # Object files
 ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(BUILD_DIR)/%.o)
 C_OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o)
+TEST_OBJECTS := $(TEST_SOURCES:%.c=$(BUILD_DIR)/%.o)
 OBJECTS := $(ASM_OBJECTS) $(C_OBJECTS)
+
+# Add test objects when building tests
+ifdef TEST_MODE
+OBJECTS += $(TEST_OBJECTS)
+endif
 
 # Output
 KERNEL := $(BUILD_DIR)/kernel.bin
@@ -41,7 +56,12 @@ ifdef DEBUG
 KERNEL_CFLAGS += -DDEBUG_TESTS
 endif
 
-.PHONY: all clean debug
+# Test build adds TEST_MODE
+ifdef TEST_MODE
+KERNEL_CFLAGS += -DTEST_MODE
+endif
+
+.PHONY: all clean debug test
 
 all: $(KERNEL)
 
@@ -49,12 +69,17 @@ all: $(KERNEL)
 debug:
 	$(MAKE) DEBUG=1 all
 
+# Test build - includes test framework
+test:
+	$(MAKE) TEST_MODE=1 all
+
 # Create build directories
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 	mkdir -p $(BUILD_DIR)/debug
 	mkdir -p $(BUILD_DIR)/arch/x86_64
 	mkdir -p $(BUILD_DIR)/mm
+	mkdir -p $(BUILD_DIR)/tests
 
 # Ensure directories exist before compiling
 $(BUILD_DIR)/debug/%.o: | $(BUILD_DIR)

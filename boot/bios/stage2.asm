@@ -907,7 +907,7 @@ gdt_descriptor:
 disk_packet:
     db 0x10         ; Packet size
     db 0            ; Reserved
-    dw 64           ; Number of sectors to read
+    dw 128          ; Number of sectors to read (128 * 512 = 64KB)
     dw 0x0000       ; Offset
     dw 0x2000       ; Segment (load at 0x20000 temp)
     dq 34           ; Starting LBA (after stage1 + stage2)
