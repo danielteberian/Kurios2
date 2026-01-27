@@ -6,6 +6,7 @@
 extern void test_suite_pmm(void);
 extern void test_suite_vmm(void);
 extern void test_suite_slab(void);
+extern void test_suite_spinlock(void);
 
 /*
  * Run all kernel tests
@@ -18,6 +19,7 @@ void run_all_tests(void) {
     RUN_SUITE(pmm);
     RUN_SUITE(vmm);
     RUN_SUITE(slab);
+    RUN_SUITE(spinlock);
 
     /* Print final results */
     test_print_results();

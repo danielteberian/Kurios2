@@ -25,7 +25,8 @@ TEST_SOURCES := \
     tests/test_all.c \
     tests/test_pmm.c \
     tests/test_vmm.c \
-    tests/test_slab.c
+    tests/test_slab.c \
+    tests/test_spinlock.c
 
 # Object files
 ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(BUILD_DIR)/%.o)
@@ -81,6 +82,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/debug
 	mkdir -p $(BUILD_DIR)/arch/x86_64
 	mkdir -p $(BUILD_DIR)/mm
+	mkdir -p $(BUILD_DIR)/sync
 	mkdir -p $(BUILD_DIR)/tests
 
 # Ensure directories exist before compiling
