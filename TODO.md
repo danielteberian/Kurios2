@@ -9,8 +9,8 @@
 3. [x] Stack smash protector
 4. [x] Physical memory manager (buddy allocator)
 5. [x] Virtual memory manager (page table management, map/unmap API)
-6. [ ] Kernel heap (slab allocator - kmalloc/kfree) **<-- NEXT**
-7. [ ] GDT with TSS (kernel/user segments, per-CPU TSS)
+6. [x] Kernel heap (slab allocator - kmalloc/kfree)
+7. [ ] GDT with TSS (kernel/user segments, per-CPU TSS) **<-- NEXT**
 8. [ ] IDT + exception handlers (page fault, GPF, double fault, etc.)
 
 ### Hardware Abstraction
@@ -23,11 +23,13 @@
 (Paused - ready to resume)
 
 ## Next Up
-- [ ] **Kernel heap (Slab Allocator)** - kmalloc/kfree for dynamic allocation
-  - Object caches for fixed-size allocations
-  - General-purpose kmalloc for variable sizes
+- [ ] **GDT with TSS** - Proper segment descriptors for kernel/user mode
+  - Kernel code/data segments
+  - User code/data segments
+  - Task State Segment (TSS) for interrupt stack switching
 
 ## Completed Recently
+- [x] Slab Allocator (kmalloc/kfree) - VERIFIED WORKING (14 tests)
 - [x] VMM (Virtual Memory Manager) - VERIFIED WORKING
 - [x] PMM (Buddy Allocator) - VERIFIED WORKING
 - [x] Stack smash protector - VERIFIED WORKING

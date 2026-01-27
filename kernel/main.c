@@ -11,6 +11,7 @@
 #include "tests/tests.h"
 #endif
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/gdt.h"
 #include "arch/x86_64/serial.h"
 #include "boot_info.h"
 
@@ -88,6 +89,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize stack protector with randomized canary */
     stack_protector_init();
+
+    /* Initialize GDT and TSS */
+    gdt_init();
 
     kprintf("\n");
     INFO("Kurios2 Kernel Starting...");
