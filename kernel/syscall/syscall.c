@@ -4,6 +4,7 @@
 #include "../debug/debug.h"
 #include "../arch/x86_64/gdt.h"
 #include "../include/types.h"
+#include "../mm/as.h"
 
 /*
  * Model Specific Registers for SYSCALL/SYSRET
@@ -66,13 +67,21 @@ static int64_t sys_exit(uint64_t status, uint64_t arg2,
                         uint64_t arg5, uint64_t arg6) {
     (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
 
-    DEBUG("sys_exit(%llu)", status);
+    INFO("sys_exit: Process exiting with status %llu", status);
 
-    /* TODO: Actually terminate the process */
-    /* For now, just halt */
-    INFO("Process exiting with status %llu", status);
+    /*
+     * Switch back to kernel address space
+     * This ensures we don't crash when the user's address space is destroyed
+     */
+    as_switch(as_get_kernel());
 
-    /* This should never return */
+    kprintf("\n=== User Process Exited ===\n");
+    kprintf("  Exit code: %llu\n", status);
+    kprintf("  (Process cleanup not yet implemented)\n");
+    kprintf("  System halting.\n");
+
+    /* Disable interrupts and halt */
+    __asm__ volatile("cli");
     while (1) {
         __asm__ volatile("hlt");
     }

@@ -14,6 +14,7 @@ typedef struct {
     uint64_t rsp;           /* User stack pointer */
     uint64_t rflags;        /* Initial RFLAGS */
     address_space_t *as;    /* Address space to use */
+    uint64_t kernel_stack;  /* Kernel stack top (for TSS.RSP0) */
 } user_entry_t;
 
 /*

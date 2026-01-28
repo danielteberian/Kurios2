@@ -5,7 +5,12 @@
 #include "../arch/x86_64/gdt.h"
 #include "../mm/vmm.h"
 #include "../mm/pmm.h"
+#include "../mm/slab.h"
+#include "../process/process.h"
 #include "lib/string.h"
+
+/* Kernel stack size for user processes (16KB) */
+#define KERNEL_STACK_SIZE   (16 * 1024)
 
 /*
  * Test user program machine code
@@ -72,7 +77,10 @@ void user_enter(user_entry_t *entry) {
     }
 
     /* Set up TSS.RSP0 for when we return to kernel via syscall/interrupt */
-    /* TODO: Set per-process kernel stack in TSS */
+    if (entry->kernel_stack) {
+        tss_set_rsp0(entry->kernel_stack);
+        DEBUG("TSS.RSP0 set to 0x%llx", entry->kernel_stack);
+    }
 
     /* Jump to ring 3 via IRETQ */
     ring3_enter(
@@ -91,10 +99,20 @@ void user_enter(user_entry_t *entry) {
  * Create a test user program
  */
 int user_create_test_program(address_space_t *as, user_entry_t *entry) {
+    /* Allocate kernel stack for syscall/interrupt handling */
+    void *kernel_stack = kmalloc(KERNEL_STACK_SIZE);
+    if (!kernel_stack) {
+        ERROR("Failed to allocate kernel stack");
+        return -1;
+    }
+    /* Stack grows down, so RSP0 points to top of allocation */
+    uint64_t kernel_stack_top = (uint64_t)kernel_stack + KERNEL_STACK_SIZE;
+
     /* Allocate user code page at USER_SPACE_START */
     uint64_t code_virt = USER_SPACE_START;
     if (as_alloc_page(as, code_virt, PTE_USER_RWX) < 0) {
         ERROR("Failed to allocate user code page");
+        kfree(kernel_stack);
         return -1;
     }
 
@@ -106,7 +124,7 @@ int user_create_test_program(address_space_t *as, user_entry_t *entry) {
     for (uint64_t addr = stack_base; addr < stack_top; addr += PAGE_SIZE) {
         if (as_alloc_page(as, addr, PTE_USER_RW) < 0) {
             ERROR("Failed to allocate user stack page at 0x%llx", addr);
-            /* TODO: Clean up already allocated pages */
+            kfree(kernel_stack);
             return -1;
         }
     }
@@ -118,6 +136,7 @@ int user_create_test_program(address_space_t *as, user_entry_t *entry) {
     uint64_t code_phys = as_get_phys(as, code_virt);
     if (code_phys == 0) {
         ERROR("Failed to get physical address for user code");
+        kfree(kernel_stack);
         return -1;
     }
 
@@ -125,6 +144,7 @@ int user_create_test_program(address_space_t *as, user_entry_t *entry) {
     uint64_t temp_virt = 0xFFFFFFFF90100000UL;  /* Temporary kernel mapping */
     if (vmm_map_page(temp_virt, code_phys, PTE_KERNEL_RW) < 0) {
         ERROR("Failed to create temporary mapping for code copy");
+        kfree(kernel_stack);
         return -1;
     }
 
@@ -139,9 +159,10 @@ int user_create_test_program(address_space_t *as, user_entry_t *entry) {
     entry->rsp = stack_top - 8;  /* Stack grows down, align to 8 */
     entry->rflags = USER_RFLAGS_DEFAULT;
     entry->as = as;
+    entry->kernel_stack = kernel_stack_top;
 
-    INFO("Test user program created: code=0x%llx, stack=0x%llx",
-         entry->rip, entry->rsp);
+    INFO("Test user program created: code=0x%llx, stack=0x%llx, kstack=0x%llx",
+         entry->rip, entry->rsp, kernel_stack_top);
 
     return 0;
 }
