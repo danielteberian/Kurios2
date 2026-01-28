@@ -21,6 +21,7 @@ C_SOURCES := \
     mm/vmm.c \
     mm/slab.c \
     mm/as.c \
+    mm/uaccess.c \
     fs/vfs.c \
     fs/ramfs.c \
     fs/fd_table.c \
