@@ -5,6 +5,7 @@
 #include "../arch/x86_64/gdt.h"
 #include "../include/types.h"
 #include "../mm/as.h"
+#include "../mm/uaccess.h"
 #include "../process/process.h"
 #include "../sched/sched.h"
 #include "../loader/elf_loader.h"
@@ -98,23 +99,52 @@ static int64_t sys_exit(uint64_t status, uint64_t arg2,
 
 /*
  * sys_write - write to a file descriptor
+ *
+ * For stdout/stderr (fd 1, 2): outputs to serial console
+ * For other fds: TODO - use VFS
  */
+#define WRITE_CHUNK_SIZE 256
+
 static int64_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
     (void)arg4; (void)arg5; (void)arg6;
 
     DEBUG("sys_write(fd=%llu, buf=0x%llx, count=%llu)", fd, buf, count);
 
-    /* TODO: Proper fd handling and user pointer validation */
-    /* For now, just output to serial if fd is 1 (stdout) or 2 (stderr) */
-    if (fd == 1 || fd == 2) {
-        const char *str = (const char *)buf;
-        for (uint64_t i = 0; i < count; i++) {
-            kprintf("%c", str[i]);
-        }
-        return (int64_t)count;
+    /* Validate user buffer */
+    if (count > 0 && !access_ok((const void *)buf, count)) {
+        return -EFAULT;
     }
 
+    /* Handle stdout/stderr - output to serial console */
+    if (fd == 1 || fd == 2) {
+        char kbuf[WRITE_CHUNK_SIZE];
+        uint64_t written = 0;
+
+        while (written < count) {
+            /* Copy chunk from user space */
+            uint64_t chunk = count - written;
+            if (chunk > WRITE_CHUNK_SIZE) {
+                chunk = WRITE_CHUNK_SIZE;
+            }
+
+            int err = copy_from_user(kbuf, (const void *)(buf + written), chunk);
+            if (err < 0) {
+                return written > 0 ? (int64_t)written : err;
+            }
+
+            /* Output to console */
+            for (uint64_t i = 0; i < chunk; i++) {
+                kprintf("%c", kbuf[i]);
+            }
+
+            written += chunk;
+        }
+
+        return (int64_t)written;
+    }
+
+    /* TODO: Handle other file descriptors via VFS */
     return -EBADF;
 }
 
@@ -351,8 +381,11 @@ static int64_t sys_fork_impl(syscall_frame_t *frame) {
  * @param envp  Environment vector (user pointer, can be NULL)
  * @return Does not return on success, negative error on failure
  */
+/* Maximum path length for execve */
+#define EXEC_PATH_MAX 256
+
 static int64_t sys_execve_impl(syscall_frame_t *frame) {
-    const char *path = (const char *)frame->rdi;
+    const char *user_path = (const char *)frame->rdi;
     /* char **argv = (char **)frame->rsi; */  /* TODO: handle argv */
     /* char **envp = (char **)frame->rdx; */  /* TODO: handle envp */
 
@@ -360,6 +393,16 @@ static int64_t sys_execve_impl(syscall_frame_t *frame) {
     if (!proc) {
         ERROR("sys_execve: no current process");
         return -ESRCH;
+    }
+
+    /*
+     * Copy path from user space
+     */
+    char path[EXEC_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, user_path, EXEC_PATH_MAX);
+    if (path_len < 0) {
+        ERROR("sys_execve: invalid path pointer");
+        return (int64_t)path_len;
     }
 
     INFO("sys_execve: PID %u executing '%s'", proc->pid, path);
