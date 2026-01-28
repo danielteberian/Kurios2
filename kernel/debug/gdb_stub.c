@@ -668,16 +668,21 @@ static void gdb_event_loop(cpu_state_t *state, uint8_t signal) {
 static void gdb_breakpoint_handler(void *cpu_state_ptr) {
     cpu_state_t *state = (cpu_state_t *)cpu_state_ptr;
 
-    /* INT3 is 1 byte, RIP points past it. Adjust back. */
-    state->rip--;
-
-    /* Check if this is one of our breakpoints */
-    gdb_breakpoint_t *bp = gdb_find_breakpoint(state->rip);
+    /*
+     * INT3 is 1 byte, RIP points past it.
+     * Check if this is one of our managed breakpoints (at RIP-1).
+     * If so, adjust RIP back and restore the original byte.
+     * If not, this is an explicit int3 in the code - leave RIP as-is.
+     */
+    gdb_breakpoint_t *bp = gdb_find_breakpoint(state->rip - 1);
     if (bp) {
+        /* This is our breakpoint - adjust RIP to point at it */
+        state->rip--;
         /* Restore original byte so GDB can read the real instruction */
         volatile uint8_t *ptr = (volatile uint8_t *)state->rip;
         *ptr = bp->original_byte;
     }
+    /* For explicit int3, RIP already points to next instruction - correct */
 
     /* Enter debugger */
     gdb_event_loop(state, GDB_SIGNAL_TRAP);

@@ -57,7 +57,7 @@ INCLUDES := \
     -I../boot/common
 
 # Flags
-KERNEL_CFLAGS := $(CFLAGS) $(INCLUDES)
+KERNEL_CFLAGS := $(CFLAGS) $(INCLUDES) $(EXTRA_CFLAGS)
 KERNEL_ASFLAGS := -f elf64 -g -F dwarf
 
 # Debug build adds DEBUG_TESTS

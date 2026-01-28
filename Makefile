@@ -1,6 +1,6 @@
 # Kurios2 - Top Level Makefile
 
-.PHONY: all clean boot kernel image-bios image-uefi run-bios run-uefi debug run-debug run-gdb test run-test
+.PHONY: all clean boot kernel image-bios image-uefi run-bios run-uefi debug run-debug run-gdb run-gdb-wait test run-test
 
 # Build directories
 BUILD_DIR := build
@@ -38,6 +38,23 @@ run-gdb: image-bios
 	@echo "To connect GDB:"
 	@echo "  gdb build/kernel/kernel.elf"
 	@echo "  (gdb) target remote localhost:1234"
+	@echo ""
+	@echo "Tip: Use 'make run-gdb-wait' to break on boot"
+	@echo ""
+	qemu-system-x86_64 \
+		-drive format=raw,file=$(BUILD_DIR)/kurios2-bios.img \
+		-m 256M \
+		-serial stdio \
+		-serial tcp::1234,server,nowait \
+		-no-reboot \
+		-no-shutdown
+
+# Run with GDB, waiting for connection on boot
+run-gdb-wait: boot
+	$(MAKE) -C kernel EXTRA_CFLAGS="-DGDB_BREAK_ON_BOOT"
+	$(MAKE) _image-bios
+	@echo "Kernel will WAIT for GDB connection on boot..."
+	@echo "Connect with: gdb build/kernel/kernel.elf -ex 'target remote localhost:1234'"
 	@echo ""
 	qemu-system-x86_64 \
 		-drive format=raw,file=$(BUILD_DIR)/kurios2-bios.img \
@@ -162,4 +179,5 @@ help:
 	@echo "  run-uefi    - Run in QEMU with UEFI (requires OVMF)"
 	@echo "  run-debug   - Run debug build in QEMU"
 	@echo "  run-gdb     - Run with GDB support (connect via localhost:1234)"
+	@echo "  run-gdb-wait - Run with GDB, kernel waits for connection on boot"
 	@echo "  clean       - Remove all build artifacts"

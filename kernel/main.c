@@ -122,6 +122,12 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize GDB stub for remote debugging */
     gdb_init();
 
+#ifdef GDB_BREAK_ON_BOOT
+    /* Break into debugger early - enable with -DGDB_BREAK_ON_BOOT */
+    INFO("Waiting for GDB connection on COM2 (localhost:1234)...");
+    gdb_breakpoint();
+#endif
+
     kprintf("\n");
     INFO("Kurios2 Kernel Starting...");
     kprintf("\n");
