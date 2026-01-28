@@ -21,6 +21,7 @@
 #include "sched/thread.h"
 #include "sched/sched.h"
 #include "process/process.h"
+#include "syscall/syscall.h"
 #include "debug/gdb_stub.h"
 #include "fs/vfs.h"
 #include "fs/ramfs.h"
@@ -447,9 +448,15 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize process management */
     process_init();
 
+    /* Initialize syscall infrastructure */
+    syscall_init();
+
 #ifdef DEBUG_TESTS
     /* Run process subsystem tests */
     process_run_tests();
+
+    /* Run syscall infrastructure tests */
+    syscall_run_tests();
 #endif
 
     /* Create demo threads */

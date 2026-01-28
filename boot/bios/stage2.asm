@@ -968,7 +968,7 @@ sectors_remaining:  dw 0
 boot_drive:         db 0
 has_framebuffer:    db 0
 memory_map_count:   dw 0
-kernel_size:        dd 0x12000      ; 72KB default, updated by build
+kernel_size:        dd 0x20000      ; 128KB default - room for kernel growth
 
 ; Far jump targets (6 bytes each: 4 byte offset + 2 byte segment)
 pm_jump_target:     dd 0            ; 32-bit offset

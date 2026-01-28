@@ -7,7 +7,7 @@ BUILD_DIR := ../build/kernel
 SRC_DIR := .
 
 # Source files
-ASM_SOURCES := entry.asm arch/x86_64/gdt_flush.asm arch/x86_64/isr.asm sched/context.asm
+ASM_SOURCES := entry.asm arch/x86_64/gdt_flush.asm arch/x86_64/isr.asm sched/context.asm syscall/syscall_entry.asm
 C_SOURCES := \
     main.c \
     stack_protector.c \
@@ -28,7 +28,8 @@ C_SOURCES := \
     drivers/pit.c \
     sched/thread.c \
     sched/sched.c \
-    process/process.c
+    process/process.c \
+    syscall/syscall.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
@@ -99,6 +100,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/drivers
 	mkdir -p $(BUILD_DIR)/sched
 	mkdir -p $(BUILD_DIR)/process
+	mkdir -p $(BUILD_DIR)/syscall
 	mkdir -p $(BUILD_DIR)/tests
 
 # Ensure directories exist before compiling
