@@ -25,9 +25,11 @@
 ### Process Management
 13. [x] Multithreading (kernel threads, scheduler, context switching)
 14. [x] Process structure and process table (kernel processes, PID management)
-15. [ ] Per-process address spaces (separate page tables)
-16. [ ] Syscall infrastructure (SYSCALL/SYSRET, syscall table)
-17. [ ] User-space entry (ring 3 transition)
+15. [x] Per-process address spaces (separate page tables)
+16. [x] Syscall infrastructure (SYSCALL/SYSRET, syscall table)
+17. [x] User-space entry (ring 3 transition)
+18. [x] fork() system call
+19. [ ] exec() system call
 
 ### Device Drivers
 15. [x] Keyboard driver (PS/2 keyboard via IRQ1)
@@ -43,11 +45,16 @@
 - None
 
 ## Next Up
-- [ ] **Per-process address spaces** - Separate page tables per process
-- [ ] **Syscall infrastructure** - SYSCALL/SYSRET entry point, syscall table
-- [ ] **User-space entry** - Ring 3 transition (iret/sysret)
+- [ ] **exec() system call** - Load and execute ELF from VFS
+- [ ] **Per-process file descriptor table** - Separate fd tables per process
+- [ ] **ACPI table parsing** - Find MADT, HPET, FADT
 
 ## Completed Recently
+- [x] fork() system call - IMPLEMENTED (sys_fork_impl, address space cloning)
+- [x] User-space entry (ring 3) - IMPLEMENTED (IRETQ, TSS.RSP0)
+- [x] Syscall infrastructure - VERIFIED WORKING (SYSCALL/SYSRET, syscall table)
+- [x] ELF loader - VERIFIED WORKING (load PT_LOAD segments)
+- [x] Per-process address spaces - VERIFIED WORKING (as_clone, as_create)
 - [x] Process structure and process table - VERIFIED WORKING (10 tests, PID 0-255)
 - [x] VFS + Ramfs - VERIFIED WORKING (file ops, directory ops, mounting)
 - [x] GDB Stub - VERIFIED WORKING (remote debugging over serial)

@@ -22,6 +22,7 @@ extern syscall_dispatch
 
 ; Export symbols
 global syscall_entry
+global fork_child_return
 
 ;------------------------------------------------------------------------------
 ; syscall_entry - Entry point for SYSCALL instruction
@@ -118,7 +119,45 @@ syscall_entry:
     ;
     ; RAX contains the syscall return value
 
-    sysretq                     ; 64-bit return to user mode
+    o64 sysret                     ; 64-bit return to user mode
+
+;------------------------------------------------------------------------------
+; fork_child_return - Return to user mode for fork child
+;
+; Called with:
+;   RDI = pointer to syscall_frame_t
+;
+; This function never returns - it executes SYSRET to return to user mode.
+; The child process calls this to "return" from fork() with RAX=0.
+;------------------------------------------------------------------------------
+fork_child_return:
+    ; RDI points to syscall_frame_t
+    ; Load return value (should be 0 for child)
+    mov rax, [rdi + 96]         ; frame->rax
+
+    ; Load user RIP and RFLAGS for SYSRET
+    mov rcx, [rdi + 104]        ; frame->rcx = user RIP
+    mov r11, [rdi + 112]        ; frame->r11 = user RFLAGS
+
+    ; Load user stack pointer
+    mov rsp, [rdi + 120]        ; frame->rsp = user RSP
+
+    ; Clear other registers for security (prevent info leaks)
+    xor rdi, rdi
+    xor rsi, rsi
+    xor rdx, rdx
+    xor r8, r8
+    xor r9, r9
+    xor r10, r10
+    xor rbx, rbx
+    xor rbp, rbp
+    xor r12, r12
+    xor r13, r13
+    xor r14, r14
+    xor r15, r15
+
+    ; Return to user mode
+    o64 sysret
 
 ;------------------------------------------------------------------------------
 ; Scratch space and kernel syscall stack

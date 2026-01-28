@@ -147,6 +147,37 @@
   - Kernel process owns boot thread
   - Per-process kernel stack allocation (16KB)
 
+### User-Space Support [IMPLEMENTED]
+- [2026-01-27] Address space management (`kernel/mm/as.c`, `kernel/mm/as.h`)
+  - as_create() - Create new address space with kernel higher-half
+  - as_clone() - Clone address space for fork (copies all user pages)
+  - as_destroy() - Free all user-space pages and page tables
+  - as_switch() - Switch CR3 to new address space
+  - as_map_page(), as_alloc_page(), as_free_page()
+  - User space: 0x0 - 0x7FFFFFFFFFFF, Kernel: 0xFFFF800000000000+
+- [2026-01-27] Syscall infrastructure (`kernel/syscall/syscall.c`, `syscall_entry.asm`)
+  - SYSCALL/SYSRET entry point with proper MSR setup (STAR, LSTAR, SFMASK, EFER.SCE)
+  - syscall_frame_t for saving all registers
+  - syscall_dispatch() - C dispatcher with handler table
+  - Syscalls: exit (60), write (1), getpid (39), getppid (110), fork (57)
+  - x86_64 calling convention: RAX=num, RDI/RSI/RDX/R10/R8/R9=args
+- [2026-01-27] Ring 3 entry (`kernel/user/user_entry.c`, `ring3_enter.asm`)
+  - ring3_enter() - Assembly IRETQ to switch to user mode
+  - user_enter() - Sets TSS.RSP0, calls ring3_enter
+  - Test user program embedded in kernel
+  - GDT selectors: User CS=0x23, User SS=0x1B
+- [2026-01-27] ELF loader (`kernel/loader/elf_loader.c`, `elf.h`)
+  - elf_load() - Load ELF64 into address space
+  - Validates ELF header (magic, class, machine)
+  - Loads PT_LOAD segments with proper permissions (R/W/X)
+  - Handles BSS (zeroes pages beyond p_filesz)
+  - Returns entry point, base/end addresses
+- [2026-01-27] fork() system call (`kernel/syscall/syscall.c`)
+  - sys_fork_impl() - Creates child process with cloned address space
+  - fork_child_entry() - Thread entry for child, returns via SYSRET with RAX=0
+  - fork_child_return() - Assembly helper to restore frame and SYSRET
+  - Parent returns child PID, child returns 0
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

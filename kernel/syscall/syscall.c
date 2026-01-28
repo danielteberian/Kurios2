@@ -5,6 +5,9 @@
 #include "../arch/x86_64/gdt.h"
 #include "../include/types.h"
 #include "../mm/as.h"
+#include "../process/process.h"
+#include "../sched/sched.h"
+#include "lib/string.h"
 
 /*
  * Model Specific Registers for SYSCALL/SYSRET
@@ -120,8 +123,181 @@ static int64_t sys_getpid(uint64_t arg1, uint64_t arg2,
     (void)arg1; (void)arg2; (void)arg3;
     (void)arg4; (void)arg5; (void)arg6;
 
-    /* TODO: Return actual PID from process_current() */
+    process_t *proc = process_current();
+    if (proc) {
+        return (int64_t)proc->pid;
+    }
     return 0;  /* Kernel process */
+}
+
+/*
+ * sys_getppid - get parent process ID
+ */
+static int64_t sys_getppid(uint64_t arg1, uint64_t arg2,
+                           uint64_t arg3, uint64_t arg4,
+                           uint64_t arg5, uint64_t arg6) {
+    (void)arg1; (void)arg2; (void)arg3;
+    (void)arg4; (void)arg5; (void)arg6;
+
+    process_t *proc = process_current();
+    if (proc) {
+        return (int64_t)proc->parent_pid;
+    }
+    return 0;
+}
+
+/*
+ * Fork return assembly entry point (defined in syscall_entry.asm)
+ * This is called by the child after fork to return to user mode.
+ * Takes pointer to syscall_frame_t in RDI.
+ */
+extern void fork_child_return(syscall_frame_t *frame) __attribute__((noreturn));
+
+/*
+ * Fork child context - passed to fork_child_entry
+ */
+typedef struct {
+    syscall_frame_t frame;      /* Copy of parent's syscall frame */
+    process_t *child_proc;      /* Child process pointer */
+} fork_child_ctx_t;
+
+/*
+ * Child process entry point for fork
+ * This function is called when the child process first runs.
+ * It sets up the return state and jumps to user mode.
+ */
+static void fork_child_entry(void *arg) {
+    fork_child_ctx_t *ctx = (fork_child_ctx_t *)arg;
+
+    DEBUG("fork_child_entry: rip=0x%llx, rsp=0x%llx, rflags=0x%llx",
+          ctx->frame.rcx, ctx->frame.rsp, ctx->frame.r11);
+
+    /* The child returns 0 from fork */
+    ctx->frame.rax = 0;
+
+    /*
+     * Set this as the current process
+     */
+    process_set_current(ctx->child_proc);
+
+    /*
+     * Switch to the child's address space before returning to user mode.
+     */
+    if (ctx->child_proc && ctx->child_proc->cr3 != 0) {
+        address_space_t child_as;
+        child_as.cr3 = ctx->child_proc->cr3;
+        child_as.ref_count = 1;
+        child_as.user_pages = 0;
+        as_switch(&child_as);
+        DEBUG("fork_child_entry: switched to child AS cr3=0x%llx",
+              ctx->child_proc->cr3);
+    }
+
+    /*
+     * Return to user mode via assembly helper.
+     * This never returns.
+     */
+    fork_child_return(&ctx->frame);
+}
+
+/*
+ * sys_fork - create a child process
+ *
+ * This is handled specially because it needs the full syscall frame.
+ * Returns: child PID to parent, 0 to child, -1 on error
+ */
+static int64_t sys_fork_impl(syscall_frame_t *frame) {
+    process_t *parent = process_current();
+    if (!parent) {
+        ERROR("sys_fork: no current process");
+        return -ESRCH;
+    }
+
+    INFO("sys_fork: parent PID %u forking", parent->pid);
+
+    /*
+     * Step 1: Create child process structure
+     */
+    char child_name[32];
+    int name_len = 0;
+    const char *pname = parent->name;
+    while (name_len < 24 && pname[name_len]) {
+        child_name[name_len] = pname[name_len];
+        name_len++;
+    }
+    child_name[name_len++] = '.';
+    child_name[name_len++] = 'c';
+    child_name[name_len] = '\0';
+
+    process_t *child = process_create(child_name);
+    if (!child) {
+        ERROR("sys_fork: failed to create child process");
+        return -EAGAIN;
+    }
+
+    /*
+     * Step 2: Clone parent's address space
+     * We need the parent's address space, not the kernel's
+     */
+    address_space_t parent_as;
+    parent_as.cr3 = parent->cr3;
+    parent_as.ref_count = 1;
+    parent_as.user_pages = 0;  /* Will be counted by clone */
+
+    address_space_t *child_as = as_clone(&parent_as);
+    if (!child_as) {
+        ERROR("sys_fork: failed to clone address space");
+        process_exit(child, -1);
+        process_destroy(child);
+        return -ENOMEM;
+    }
+
+    /* Update child's page table */
+    child->cr3 = child_as->cr3;
+
+    /*
+     * Step 3: Allocate fork context for child
+     * This structure is placed on the child's kernel stack and contains
+     * the syscall frame copy and process pointer.
+     */
+    fork_child_ctx_t *ctx = (fork_child_ctx_t *)
+        (((uint64_t)child->kernel_stack + child->kernel_stack_size) -
+         sizeof(fork_child_ctx_t) - 16);  /* 16 bytes alignment */
+
+    /* Copy parent's frame */
+    memcpy(&ctx->frame, frame, sizeof(syscall_frame_t));
+
+    /* Child returns 0 */
+    ctx->frame.rax = 0;
+
+    /* Store child process pointer */
+    ctx->child_proc = child;
+
+    /*
+     * Step 4: Create child thread that will "return" from fork
+     *
+     * The thread entry is fork_child_entry which sets up state and
+     * executes SYSRET to return to user mode at the instruction after syscall.
+     */
+    thread_t *child_thread = thread_create(child_name, fork_child_entry, ctx);
+    if (!child_thread) {
+        ERROR("sys_fork: failed to create child thread");
+        as_destroy(child_as);
+        process_exit(child, -1);
+        process_destroy(child);
+        return -EAGAIN;
+    }
+
+    child->main_thread = child_thread;
+    child->state = PROC_READY;
+    child->entry_point = frame->rcx;  /* User RIP */
+    child->user_stack = frame->rsp;   /* User RSP */
+
+    INFO("sys_fork: created child PID %u (parent PID %u)",
+         child->pid, parent->pid);
+
+    /* Parent returns child PID */
+    return (int64_t)child->pid;
 }
 
 /*
@@ -136,6 +312,13 @@ int64_t syscall_dispatch(syscall_frame_t *frame) {
     if (syscall_num >= SYS_MAX) {
         WARN("Invalid syscall number: %llu", syscall_num);
         return -ENOSYS;
+    }
+
+    /*
+     * Handle syscalls that need the full frame specially
+     */
+    if (syscall_num == SYS_FORK) {
+        return sys_fork_impl(frame);
     }
 
     syscall_handler_t handler = syscall_table[syscall_num];
@@ -184,6 +367,8 @@ void syscall_init(void) {
     syscall_register(SYS_EXIT, sys_exit);
     syscall_register(SYS_WRITE, sys_write);
     syscall_register(SYS_GETPID, sys_getpid);
+    syscall_register(SYS_GETPPID, sys_getppid);
+    /* Note: SYS_FORK is handled specially in syscall_dispatch */
 
     /*
      * Configure MSRs for SYSCALL/SYSRET
