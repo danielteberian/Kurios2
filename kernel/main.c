@@ -23,6 +23,7 @@
 #include "process/process.h"
 #include "syscall/syscall.h"
 #include "user/user_entry.h"
+#include "loader/elf_loader.h"
 #include "debug/gdb_stub.h"
 #include "fs/vfs.h"
 #include "fs/ramfs.h"
@@ -458,6 +459,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Run syscall infrastructure tests */
     syscall_run_tests();
+
+    /* Run ELF loader tests */
+    elf_loader_run_tests();
 #endif
 
     /* Create demo threads */

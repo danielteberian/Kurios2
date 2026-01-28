@@ -30,7 +30,8 @@ C_SOURCES := \
     sched/sched.c \
     process/process.c \
     syscall/syscall.c \
-    user/user_entry.c
+    user/user_entry.c \
+    loader/elf_loader.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
@@ -104,6 +105,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/syscall
 	mkdir -p $(BUILD_DIR)/tests
 	mkdir -p $(BUILD_DIR)/user
+	mkdir -p $(BUILD_DIR)/loader
 
 # Ensure directories exist before compiling
 $(BUILD_DIR)/debug/%.o: | $(BUILD_DIR)
