@@ -20,6 +20,7 @@ C_SOURCES := \
     mm/pmm.c \
     mm/vmm.c \
     mm/slab.c \
+    mm/as.c \
     fs/vfs.c \
     fs/ramfs.c \
     drivers/keyboard.c \

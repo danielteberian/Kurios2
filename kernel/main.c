@@ -6,6 +6,7 @@
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "mm/slab.h"
+#include "mm/as.h"
 
 #ifdef TEST_MODE
 #include "tests/tests.h"
@@ -338,6 +339,11 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize slab allocator (kernel heap) */
     slab_init();
+
+#ifdef DEBUG_TESTS
+    /* Run address space tests (requires slab allocator) */
+    as_run_tests();
+#endif
 
     /* Initialize VFS and ramfs */
     vfs_init();
