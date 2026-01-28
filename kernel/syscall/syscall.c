@@ -12,6 +12,7 @@
 #include "../fs/vfs.h"
 #include "../fs/fd_table.h"
 #include "../mm/slab.h"
+#include "../drivers/keyboard.h"
 #include "lib/string.h"
 
 /*
@@ -95,6 +96,94 @@ static int64_t sys_exit(uint64_t status, uint64_t arg2,
     }
 
     return 0;
+}
+
+/*
+ * sys_read - read from a file descriptor
+ *
+ * For stdin (fd 0): reads from keyboard
+ * For other fds: TODO - use VFS when open() is implemented
+ */
+#define READ_CHUNK_SIZE 256
+
+static int64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
+                        uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    DEBUG("sys_read(fd=%llu, buf=0x%llx, count=%llu)", fd, buf, count);
+
+    /* Zero count is valid - just return 0 */
+    if (count == 0) {
+        return 0;
+    }
+
+    /* Validate user buffer */
+    if (!access_ok((void *)buf, count)) {
+        return -EFAULT;
+    }
+
+    /* Handle stdin - read from keyboard */
+    if (fd == 0) {
+        char kbuf[READ_CHUNK_SIZE];
+        uint64_t bytes_read = 0;
+
+        /*
+         * Read characters until:
+         * - We've filled the buffer (count bytes)
+         * - We get a newline (line-buffered input)
+         * - No more input available (non-blocking after first char)
+         */
+        while (bytes_read < count) {
+            char c;
+
+            if (bytes_read == 0) {
+                /* First character: block until available */
+                c = keyboard_getchar();
+            } else {
+                /* Subsequent characters: non-blocking */
+                c = keyboard_getchar_nonblock();
+                if (c == 0) {
+                    /* No more input available */
+                    break;
+                }
+            }
+
+            /* Store in kernel buffer */
+            kbuf[bytes_read % READ_CHUNK_SIZE] = c;
+            bytes_read++;
+
+            /* Copy chunk to user space when buffer is full */
+            if (bytes_read % READ_CHUNK_SIZE == 0) {
+                int err = copy_to_user((void *)(buf + bytes_read - READ_CHUNK_SIZE),
+                                       kbuf, READ_CHUNK_SIZE);
+                if (err < 0) {
+                    return bytes_read > READ_CHUNK_SIZE ?
+                           (int64_t)(bytes_read - READ_CHUNK_SIZE) : err;
+                }
+            }
+
+            /* Stop on newline (line-buffered mode) */
+            if (c == '\n') {
+                break;
+            }
+        }
+
+        /* Copy remaining bytes to user space */
+        uint64_t remaining = bytes_read % READ_CHUNK_SIZE;
+        if (remaining > 0 || (bytes_read > 0 && bytes_read % READ_CHUNK_SIZE == 0)) {
+            uint64_t copy_size = remaining > 0 ? remaining : READ_CHUNK_SIZE;
+            uint64_t offset = bytes_read - copy_size;
+            int err = copy_to_user((void *)(buf + offset), kbuf, copy_size);
+            if (err < 0) {
+                return offset > 0 ? (int64_t)offset : err;
+            }
+        }
+
+        return (int64_t)bytes_read;
+    }
+
+    /* TODO: Handle other file descriptors via VFS when open() is implemented */
+    return -EBADF;
 }
 
 /*
@@ -657,8 +746,9 @@ void syscall_init(void) {
     }
 
     /* Register basic syscalls */
-    syscall_register(SYS_EXIT, sys_exit);
+    syscall_register(SYS_READ, sys_read);
     syscall_register(SYS_WRITE, sys_write);
+    syscall_register(SYS_EXIT, sys_exit);
     syscall_register(SYS_GETPID, sys_getpid);
     syscall_register(SYS_GETPPID, sys_getppid);
     /* Note: SYS_FORK is handled specially in syscall_dispatch */
