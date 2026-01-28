@@ -430,14 +430,59 @@ load_kernel:
     push cx
     push dx
 
-    ; Read kernel sectors using BIOS extended read (before unreal mode)
-    ; Need normal DS to access disk_packet and boot_drive
+    ; Calculate total sectors needed (kernel_size / 512, rounded up)
+    mov eax, [kernel_size]
+    add eax, 511            ; Round up
+    shr eax, 9              ; Divide by 512
+    mov [sectors_remaining], ax
+
+    ; Initialize for first read pass
+    mov word [disk_packet_sectors], 64   ; Max sectors per read
+    mov dword [disk_packet_lba], 34      ; Starting LBA
+    mov dword [disk_packet_lba+4], 0     ; High 32 bits of LBA
+    mov word [disk_packet_segment], 0x2000  ; First buffer segment
+
+.read_loop:
+    ; Check if we have sectors remaining
+    mov ax, [sectors_remaining]
+    test ax, ax
+    jz .read_done
+
+    ; Cap this read at 64 sectors or remaining, whichever is smaller
+    cmp ax, 64
+    jbe .use_remaining
+    mov ax, 64
+.use_remaining:
+    mov [disk_packet_sectors], ax
+    push ax                 ; Save intended sector count (BIOS may modify packet)
+
+    ; Do the BIOS extended read
     mov si, disk_packet
     mov ah, 0x42
     mov dl, [boot_drive]
     int 0x13
-    jc .error
+    jc .error_pop
 
+    ; DEBUG: Print '.' for each chunk read
+    mov ax, 0x0E2E
+    xor bx, bx
+    int 0x10
+
+    ; Update for next iteration (use saved sector count, not packet which BIOS may have modified)
+    pop ax                  ; Restore intended sector count
+    sub [sectors_remaining], ax
+
+    ; Advance LBA
+    movzx eax, ax
+    add [disk_packet_lba], eax
+
+    ; Advance segment (each sector is 512 bytes = 0x20 paragraphs)
+    shl ax, 5               ; Multiply by 32 (512/16 = 32 paragraphs per sector)
+    add [disk_packet_segment], ax
+
+    jmp .read_loop
+
+.read_done:
     ; DEBUG: Print 'R' to show read done
     mov ax, 0x0E52
     xor bx, bx
@@ -481,6 +526,8 @@ load_kernel:
     mov ax, 1
     ret
 
+.error_pop:
+    pop ax                  ; Pop saved sector count
 .error:
     pop dx
     pop cx
@@ -905,18 +952,23 @@ gdt_descriptor:
 
 ; Disk address packet for extended BIOS read
 disk_packet:
-    db 0x10         ; Packet size
-    db 0            ; Reserved
-    dw 128          ; Number of sectors to read (128 * 512 = 64KB)
-    dw 0x0000       ; Offset
-    dw 0x2000       ; Segment (load at 0x20000 temp)
-    dq 34           ; Starting LBA (after stage1 + stage2)
+    db 0x10                 ; Packet size
+    db 0                    ; Reserved
+disk_packet_sectors:
+    dw 64                   ; Number of sectors to read (max 64 per call)
+disk_packet_offset:
+    dw 0x0000               ; Offset
+disk_packet_segment:
+    dw 0x2000               ; Segment (load at 0x20000 temp)
+disk_packet_lba:
+    dq 34                   ; Starting LBA (after stage1 + stage2)
 
 ; Variables
+sectors_remaining:  dw 0
 boot_drive:         db 0
 has_framebuffer:    db 0
 memory_map_count:   dw 0
-kernel_size:        dd 0x10000      ; 64KB default, updated by build
+kernel_size:        dd 0x12000      ; 72KB default, updated by build
 
 ; Far jump targets (6 bytes each: 4 byte offset + 2 byte segment)
 pm_jump_target:     dd 0            ; 32-bit offset

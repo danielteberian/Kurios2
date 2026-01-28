@@ -94,6 +94,44 @@
 - [2026-01-27] Critical fix: EOI sent before handler in IRQ handler
   - Allows context switching from interrupt context
 
+### GDB Remote Debugger [VERIFIED]
+- [2026-01-27] GDB stub (`kernel/debug/gdb_stub.c`)
+  - Serial communication over COM2 (0x2F8)
+  - GDB Remote Serial Protocol (RSP) implementation
+  - Packet checksums, ACK/NAK handling
+  - Register read/write (g/G packets)
+  - Memory read/write (m/M packets)
+  - Single-stepping via Trap Flag (TF)
+  - Software breakpoints (INT3 opcode replacement)
+  - INT1 (debug) and INT3 (breakpoint) exception handlers
+  - Continue (c) and step (s) commands
+- [2026-01-27] Integration with IDT (vectors 1 and 3)
+- [2026-01-27] Make targets: run-gdb, run-gdb-wait
+
+### Virtual File System [VERIFIED]
+- [2026-01-27] VFS abstraction layer (`kernel/fs/vfs.c`, `kernel/fs/vfs.h`)
+  - File types (file, dir, chardev, blkdev, pipe, symlink, socket)
+  - Open flags (O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_TRUNC, O_APPEND)
+  - Error codes (VFS_ENOENT, VFS_ENOMEM, VFS_EEXIST, etc.)
+  - Filesystem registration and mount API
+  - File descriptor table (256 max)
+  - Path resolution with mount traversal
+  - File operations: open, close, read, write, seek, stat, truncate
+  - Directory operations: mkdir, rmdir, unlink, readdir
+  - Node reference counting
+- [2026-01-27] Ramfs implementation (`kernel/fs/ramfs.c`, `kernel/fs/ramfs.h`)
+  - Block-based file storage (4KB blocks)
+  - Directory children linked list
+  - File/directory operations (create, read, write, unlink, rmdir)
+  - Slab cache for ramfs data structures
+- [2026-01-27] String utilities (`kernel/lib/string.c`, `kernel/lib/string.h`)
+  - strlen, strcmp, strncmp, strcpy, strncpy, strdup
+  - strchr, strrchr
+  - memcpy, memmove, memset, memcmp
+- [2026-01-27] Bootloader multi-pass loading
+  - Fixed kernel load to read in 64-sector chunks
+  - Supports kernels > 64KB
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

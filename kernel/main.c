@@ -20,6 +20,9 @@
 #include "sched/thread.h"
 #include "sched/sched.h"
 #include "debug/gdb_stub.h"
+#include "fs/vfs.h"
+#include "fs/ramfs.h"
+#include "lib/string.h"
 #include "boot_info.h"
 
 #ifdef DEBUG_TESTS
@@ -334,6 +337,93 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize slab allocator (kernel heap) */
     slab_init();
+
+    /* Initialize VFS and ramfs */
+    vfs_init();
+    ramfs_init();
+
+    /* Mount ramfs at root */
+    if (vfs_mount(NULL, "/", "ramfs", 0) == VFS_OK) {
+        INFO("Mounted ramfs at /");
+    } else {
+        ERROR("Failed to mount ramfs at /");
+    }
+
+    /* VFS Tests */
+    kprintf("\n=== VFS Tests ===\n");
+
+    /* Test 1: Create directories */
+    int err = vfs_mkdir("/tmp");
+    kprintf("  Test 1 - mkdir /tmp: %s\n", err == VFS_OK ? "OK" : "FAIL");
+
+    err = vfs_mkdir("/home");
+    kprintf("  Test 2 - mkdir /home: %s\n", err == VFS_OK ? "OK" : "FAIL");
+
+    /* Test 3: Create and write a file */
+    int fd = vfs_open("/tmp/test.txt", O_CREAT | O_RDWR);
+    kprintf("  Test 3 - create /tmp/test.txt: %s (fd=%d)\n",
+            fd >= 0 ? "OK" : "FAIL", fd);
+
+    if (fd >= 0) {
+        /* Test 4: Write to file */
+        const char *msg = "Hello, VFS!\nThis is a test file.\n";
+        ssize_t written = vfs_write(fd, msg, strlen(msg));
+        kprintf("  Test 4 - write %lld bytes: %s\n", (long long)written,
+                written == (ssize_t)strlen(msg) ? "OK" : "FAIL");
+
+        /* Test 5: Seek to beginning */
+        int64_t pos = vfs_seek(fd, 0, SEEK_SET);
+        kprintf("  Test 5 - seek to 0: %s\n", pos == 0 ? "OK" : "FAIL");
+
+        /* Test 6: Read back */
+        char buf[128];
+        ssize_t bytes_read = vfs_read(fd, buf, sizeof(buf) - 1);
+        if (bytes_read > 0) {
+            buf[bytes_read] = '\0';
+            kprintf("  Test 6 - read %lld bytes: %s\n", (long long)bytes_read,
+                    bytes_read == written ? "OK" : "FAIL");
+            kprintf("    Content: \"%s\"\n", buf);
+        } else {
+            kprintf("  Test 6 - read: FAIL\n");
+        }
+
+        vfs_close(fd);
+    }
+
+    /* Test 7: Create another file */
+    fd = vfs_open("/tmp/hello.txt", O_CREAT | O_WRONLY);
+    if (fd >= 0) {
+        vfs_write(fd, "Hello World!", 12);
+        vfs_close(fd);
+        kprintf("  Test 7 - create /tmp/hello.txt: OK\n");
+    }
+
+    /* Test 8: Read directory */
+    fd = vfs_open("/tmp", O_RDONLY | O_DIRECTORY);
+    if (fd >= 0) {
+        kprintf("  Test 8 - readdir /tmp:\n");
+        dirent_t dent;
+        while (vfs_readdir(fd, &dent) == VFS_OK) {
+            kprintf("    - %s (%s)\n", dent.name,
+                    dent.type == VFS_DIR ? "dir" : "file");
+        }
+        vfs_close(fd);
+    }
+
+    /* Test 9: File stat */
+    vfs_stat_t st;
+    err = vfs_stat("/tmp/test.txt", &st);
+    kprintf("  Test 9 - stat /tmp/test.txt: %s (size=%llu)\n",
+            err == VFS_OK ? "OK" : "FAIL", st.size);
+
+    /* Test 10: Unlink file */
+    err = vfs_unlink("/tmp/hello.txt");
+    kprintf("  Test 10 - unlink /tmp/hello.txt: %s\n",
+            err == VFS_OK ? "OK" : "FAIL");
+
+    /* Show VFS tree */
+    kprintf("\n=== VFS Tree ===\n");
+    vfs_dump_tree(NULL, 0);
 
     /* Initialize keyboard driver */
     keyboard_init();

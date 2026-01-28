@@ -31,18 +31,21 @@
 16. [ ] Additional input devices (mouse, etc.)
 
 ### Filesystem
-17. [ ] VFS layer (virtual filesystem abstraction)
-18. [ ] Initial ramdisk (initrd/initramfs)
-19. [ ] Filesystem driver (ext2, FAT32, or custom)
+17. [x] VFS layer (virtual filesystem abstraction) - COMPLETE
+18. [x] Ramfs (in-memory filesystem) - COMPLETE
+19. [ ] Initial ramdisk (initrd/initramfs)
+20. [ ] Filesystem driver (ext2, FAT32, or custom)
 
 ## In Progress
-(None)
+- None
 
 ## Next Up
 - [ ] **ACPI table parsing** - Find MADT, HPET, FADT
 - [ ] **Process abstraction** - Address spaces, process control blocks
 
 ## Completed Recently
+- [x] VFS + Ramfs - VERIFIED WORKING (file ops, directory ops, mounting)
+- [x] GDB Stub - VERIFIED WORKING (remote debugging over serial)
 - [x] Multithreading - VERIFIED WORKING (round-robin scheduler, context switching, preemption)
 - [x] PIT Timer (100Hz) - VERIFIED WORKING (uptime, sleep_ms)
 - [x] VGA text mode driver - VERIFIED WORKING

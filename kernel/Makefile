@@ -11,6 +11,7 @@ ASM_SOURCES := entry.asm arch/x86_64/gdt_flush.asm arch/x86_64/isr.asm sched/con
 C_SOURCES := \
     main.c \
     stack_protector.c \
+    lib/string.c \
     debug/debug.c \
     debug/gdb_stub.c \
     arch/x86_64/serial.c \
@@ -19,6 +20,8 @@ C_SOURCES := \
     mm/pmm.c \
     mm/vmm.c \
     mm/slab.c \
+    fs/vfs.c \
+    fs/ramfs.c \
     drivers/keyboard.c \
     drivers/vga.c \
     drivers/pit.c \
@@ -85,9 +88,11 @@ test:
 # Create build directories
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+	mkdir -p $(BUILD_DIR)/lib
 	mkdir -p $(BUILD_DIR)/debug
 	mkdir -p $(BUILD_DIR)/arch/x86_64
 	mkdir -p $(BUILD_DIR)/mm
+	mkdir -p $(BUILD_DIR)/fs
 	mkdir -p $(BUILD_DIR)/sync
 	mkdir -p $(BUILD_DIR)/drivers
 	mkdir -p $(BUILD_DIR)/sched
