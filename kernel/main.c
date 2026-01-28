@@ -22,6 +22,7 @@
 #include "sched/sched.h"
 #include "process/process.h"
 #include "syscall/syscall.h"
+#include "user/user_entry.h"
 #include "debug/gdb_stub.h"
 #include "fs/vfs.h"
 #include "fs/ramfs.h"
@@ -558,6 +559,17 @@ void kernel_main(BootInfo *boot_info) {
             vga_puts("\n\nHalting...\n");
             break;
         }
+
+#ifdef DEBUG_TESTS
+        /* Ctrl+U: Enter user mode test */
+        if (keyboard_ctrl_pressed() && c == 'u') {
+            kprintf("\n\nCtrl+U pressed. Running user mode test...\n");
+            kprintf("(This will enter user mode and exit via syscall)\n\n");
+            vga_puts("\n\nEntering user mode...\n");
+            user_entry_run_tests();
+            /* Note: user_entry_run_tests() does not return */
+        }
+#endif
 
         if (c == '\n') {
             uint64_t uptime = pit_get_uptime_ms();
