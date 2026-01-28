@@ -1,6 +1,6 @@
 # Kurios2 - Top Level Makefile
 
-.PHONY: all clean boot kernel image-bios image-uefi run-bios run-uefi debug run-debug test run-test
+.PHONY: all clean boot kernel image-bios image-uefi run-bios run-uefi debug run-debug run-gdb test run-test
 
 # Build directories
 BUILD_DIR := build
@@ -26,6 +26,24 @@ run-debug: debug _image-bios
 		-drive format=raw,file=$(BUILD_DIR)/kurios2-bios.img \
 		-m 256M \
 		-serial stdio \
+		-no-reboot \
+		-no-shutdown
+
+# Run with GDB support (COM1=stdio for logs, COM2=TCP:1234 for GDB)
+run-gdb: image-bios
+	@echo "Starting QEMU with GDB support..."
+	@echo "  COM1 (stdio): kernel debug output"
+	@echo "  COM2 (TCP:1234): GDB connection"
+	@echo ""
+	@echo "To connect GDB:"
+	@echo "  gdb build/kernel/kernel.elf"
+	@echo "  (gdb) target remote localhost:1234"
+	@echo ""
+	qemu-system-x86_64 \
+		-drive format=raw,file=$(BUILD_DIR)/kurios2-bios.img \
+		-m 256M \
+		-serial stdio \
+		-serial tcp::1234,server,nowait \
 		-no-reboot \
 		-no-shutdown
 
@@ -143,4 +161,5 @@ help:
 	@echo "  run-bios    - Run in QEMU with BIOS"
 	@echo "  run-uefi    - Run in QEMU with UEFI (requires OVMF)"
 	@echo "  run-debug   - Run debug build in QEMU"
+	@echo "  run-gdb     - Run with GDB support (connect via localhost:1234)"
 	@echo "  clean       - Remove all build artifacts"

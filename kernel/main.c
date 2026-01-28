@@ -19,6 +19,7 @@
 #include "drivers/pit.h"
 #include "sched/thread.h"
 #include "sched/sched.h"
+#include "debug/gdb_stub.h"
 #include "boot_info.h"
 
 #ifdef DEBUG_TESTS
@@ -117,6 +118,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize IDT and exception handlers */
     idt_init();
+
+    /* Initialize GDB stub for remote debugging */
+    gdb_init();
 
     kprintf("\n");
     INFO("Kurios2 Kernel Starting...");

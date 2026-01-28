@@ -12,6 +12,7 @@ C_SOURCES := \
     main.c \
     stack_protector.c \
     debug/debug.c \
+    debug/gdb_stub.c \
     arch/x86_64/serial.c \
     arch/x86_64/gdt.c \
     arch/x86_64/idt.c \
