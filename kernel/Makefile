@@ -23,6 +23,7 @@ C_SOURCES := \
     mm/as.c \
     fs/vfs.c \
     fs/ramfs.c \
+    fs/fd_table.c \
     drivers/keyboard.c \
     drivers/vga.c \
     drivers/pit.c \

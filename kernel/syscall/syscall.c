@@ -7,6 +7,10 @@
 #include "../mm/as.h"
 #include "../process/process.h"
 #include "../sched/sched.h"
+#include "../loader/elf_loader.h"
+#include "../fs/vfs.h"
+#include "../fs/fd_table.h"
+#include "../mm/slab.h"
 #include "lib/string.h"
 
 /*
@@ -256,7 +260,27 @@ static int64_t sys_fork_impl(syscall_frame_t *frame) {
     child->cr3 = child_as->cr3;
 
     /*
-     * Step 3: Allocate fork context for child
+     * Step 3: Clone parent's file descriptor table
+     * The child was created with an empty fd table - replace it with a clone
+     */
+    if (parent->fd_table) {
+        fd_table_t *child_fdt = fd_table_clone(parent->fd_table);
+        if (!child_fdt) {
+            ERROR("sys_fork: failed to clone fd table");
+            as_destroy(child_as);
+            process_exit(child, -1);
+            process_destroy(child);
+            return -ENOMEM;
+        }
+        /* Destroy the empty fd table that was created */
+        if (child->fd_table) {
+            fd_table_destroy(child->fd_table);
+        }
+        child->fd_table = child_fdt;
+    }
+
+    /*
+     * Step 4: Allocate fork context for child
      * This structure is placed on the child's kernel stack and contains
      * the syscall frame copy and process pointer.
      */
@@ -301,6 +325,229 @@ static int64_t sys_fork_impl(syscall_frame_t *frame) {
 }
 
 /*
+ * Maximum file size for exec (1MB should be plenty for now)
+ */
+#define EXEC_MAX_FILE_SIZE  (1024 * 1024)
+
+/*
+ * User stack layout for exec:
+ *   [stack_top - 8]     = NULL (end of envp)
+ *   [stack_top - 16..]  = envp pointers
+ *   [stack_top - N]     = NULL (end of argv)
+ *   [stack_top - N-8..] = argv pointers
+ *   [stack_top - M]     = argc
+ *   Below that          = string data for argv/envp
+ *
+ * For simplicity, we just set up an empty argv/envp and argc=0
+ */
+#define USER_STACK_TOP_EXEC 0x7FFFFFF00000UL
+#define USER_STACK_PAGES    16  /* 64KB stack */
+
+/*
+ * sys_execve - replace current process with new executable
+ *
+ * @param path  Path to executable (user pointer)
+ * @param argv  Argument vector (user pointer, can be NULL)
+ * @param envp  Environment vector (user pointer, can be NULL)
+ * @return Does not return on success, negative error on failure
+ */
+static int64_t sys_execve_impl(syscall_frame_t *frame) {
+    const char *path = (const char *)frame->rdi;
+    /* char **argv = (char **)frame->rsi; */  /* TODO: handle argv */
+    /* char **envp = (char **)frame->rdx; */  /* TODO: handle envp */
+
+    process_t *proc = process_current();
+    if (!proc) {
+        ERROR("sys_execve: no current process");
+        return -ESRCH;
+    }
+
+    INFO("sys_execve: PID %u executing '%s'", proc->pid, path);
+
+    /*
+     * Step 1: Open and read the executable file
+     */
+    int fd = vfs_open(path, O_RDONLY);
+    if (fd < 0) {
+        ERROR("sys_execve: failed to open '%s': %d", path, fd);
+        return -ENOENT;
+    }
+
+    /* Get file size */
+    vfs_stat_t st;
+    if (vfs_fstat(fd, &st) < 0) {
+        vfs_close(fd);
+        ERROR("sys_execve: failed to stat '%s'", path);
+        return -EIO;
+    }
+
+    if (st.size > EXEC_MAX_FILE_SIZE) {
+        vfs_close(fd);
+        ERROR("sys_execve: file too large (%llu bytes)", st.size);
+        return -E2BIG;
+    }
+
+    if (st.size == 0) {
+        vfs_close(fd);
+        ERROR("sys_execve: file is empty");
+        return -ENOEXEC;
+    }
+
+    /* Allocate buffer and read file */
+    void *elf_data = kmalloc(st.size);
+    if (!elf_data) {
+        vfs_close(fd);
+        ERROR("sys_execve: failed to allocate %llu bytes", st.size);
+        return -ENOMEM;
+    }
+
+    ssize_t bytes_read = vfs_read(fd, elf_data, st.size);
+    vfs_close(fd);
+
+    if (bytes_read != (ssize_t)st.size) {
+        kfree(elf_data);
+        ERROR("sys_execve: read error (got %lld, expected %llu)",
+              (long long)bytes_read, st.size);
+        return -EIO;
+    }
+
+    /*
+     * Step 2: Create new address space and load ELF
+     */
+    address_space_t *new_as = as_create();
+    if (!new_as) {
+        kfree(elf_data);
+        ERROR("sys_execve: failed to create address space");
+        return -ENOMEM;
+    }
+
+    elf_load_result_t elf_result;
+    int ret = elf_load(new_as, elf_data, st.size, &elf_result);
+    kfree(elf_data);  /* No longer needed */
+
+    if (ret < 0) {
+        as_destroy(new_as);
+        ERROR("sys_execve: failed to load ELF: %d", ret);
+        return -ENOEXEC;
+    }
+
+    /*
+     * Step 3: Set up user stack
+     */
+    uint64_t stack_bottom = USER_STACK_TOP_EXEC - (USER_STACK_PAGES * PAGE_SIZE);
+    ret = as_alloc_pages(new_as, stack_bottom, USER_STACK_PAGES,
+                         PTE_WRITABLE | PTE_USER);
+    if (ret < 0) {
+        as_destroy(new_as);
+        ERROR("sys_execve: failed to allocate user stack");
+        return -ENOMEM;
+    }
+
+    /*
+     * Set up initial stack contents:
+     * We need to write to the new address space. Switch temporarily.
+     */
+    address_space_t *old_as_struct = as_get_kernel();
+    uint64_t old_cr3 = proc->cr3;
+
+    /* Switch to new address space to set up stack */
+    as_switch(new_as);
+
+    /* Stack pointer starts at top, grows down */
+    uint64_t sp = USER_STACK_TOP_EXEC;
+
+    /* Push NULL for envp terminator */
+    sp -= 8;
+    *(uint64_t *)sp = 0;
+
+    /* Push NULL for argv terminator */
+    sp -= 8;
+    *(uint64_t *)sp = 0;
+
+    /* Push argc = 0 (no arguments for now) */
+    sp -= 8;
+    *(uint64_t *)sp = 0;
+
+    /* Switch back temporarily to avoid issues */
+    as_switch(old_as_struct);
+
+    /*
+     * Step 4: Replace process's address space
+     */
+
+    /* Destroy old address space if it's not the kernel's */
+    if (old_cr3 != as_get_kernel()->cr3) {
+        address_space_t old_as;
+        old_as.cr3 = old_cr3;
+        old_as.ref_count = 1;
+        old_as.user_pages = 0;
+        as_destroy(&old_as);
+    }
+
+    /* Update process with new address space */
+    proc->cr3 = new_as->cr3;
+    proc->entry_point = elf_result.entry_point;
+    proc->user_stack = sp;
+
+    /* Update process name to executable name */
+    const char *basename = path;
+    for (const char *p = path; *p; p++) {
+        if (*p == '/') {
+            basename = p + 1;
+        }
+    }
+    int i;
+    for (i = 0; i < 31 && basename[i]; i++) {
+        proc->name[i] = basename[i];
+    }
+    proc->name[i] = '\0';
+
+    /* Close file descriptors marked FD_CLOEXEC */
+    if (proc->fd_table) {
+        fd_table_close_cloexec(proc->fd_table);
+    }
+
+    INFO("sys_execve: loaded '%s', entry=0x%llx, sp=0x%llx",
+         proc->name, elf_result.entry_point, sp);
+
+    /*
+     * Step 5: Switch to new address space and return to user mode
+     * We modify the syscall frame to return to the new entry point
+     */
+    as_switch(new_as);
+
+    /* Modify frame to return to new program */
+    frame->rcx = elf_result.entry_point;  /* New RIP */
+    frame->rsp = sp;                       /* New RSP */
+    frame->rax = 0;                        /* Return value (not really used) */
+    frame->r11 = 0x202;                    /* RFLAGS: IF=1 */
+
+    /* Clear other registers for security */
+    frame->rdi = 0;
+    frame->rsi = 0;
+    frame->rdx = 0;
+    frame->r8 = 0;
+    frame->r9 = 0;
+    frame->r10 = 0;
+    frame->rbx = 0;
+    frame->rbp = 0;
+    frame->r12 = 0;
+    frame->r13 = 0;
+    frame->r14 = 0;
+    frame->r15 = 0;
+
+    /* The kfree for new_as struct is intentionally skipped -
+     * we've taken ownership of the cr3, the struct can leak for now.
+     * In a production kernel, we'd track address spaces properly. */
+
+    /*
+     * Return normally - the modified frame will cause SYSRET to
+     * jump to the new entry point with the new stack
+     */
+    return 0;
+}
+
+/*
  * Main syscall dispatcher
  */
 int64_t syscall_dispatch(syscall_frame_t *frame) {
@@ -319,6 +566,9 @@ int64_t syscall_dispatch(syscall_frame_t *frame) {
      */
     if (syscall_num == SYS_FORK) {
         return sys_fork_impl(frame);
+    }
+    if (syscall_num == SYS_EXECVE) {
+        return sys_execve_impl(frame);
     }
 
     syscall_handler_t handler = syscall_table[syscall_num];

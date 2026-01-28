@@ -10,6 +10,7 @@
 #include "../drivers/pit.h"
 #include "../arch/x86_64/cpu.h"
 #include "../lib/string.h"
+#include "../fs/fd_table.h"
 
 /* Kernel stack size: 16KB (4 pages) - same as thread stacks */
 #define KERNEL_STACK_SIZE   (16 * 1024)
@@ -112,7 +113,10 @@ void process_init(void) {
     kernel_proc->main_thread = thread_current();
     kernel_proc->start_time = pit_get_ticks();
     kernel_proc->cpu_time = 0;
-    kernel_proc->fd_table = NULL;
+    kernel_proc->fd_table = fd_table_create();
+    if (!kernel_proc->fd_table) {
+        panic("Failed to create fd table for kernel process");
+    }
     kernel_proc->entry_point = 0;
     kernel_proc->user_stack = 0;
     copy_process_name(kernel_proc, "kernel");
@@ -171,7 +175,14 @@ process_t *process_create(const char *name) {
     proc->main_thread = NULL;  /* Will be set when thread is created */
     proc->start_time = pit_get_ticks();
     proc->cpu_time = 0;
-    proc->fd_table = NULL;
+    proc->fd_table = fd_table_create();
+    if (!proc->fd_table) {
+        free_pages(stack_phys, KERNEL_STACK_ORDER);
+        kfree(proc);
+        spin_unlock_irqrestore(&process_lock, flags);
+        ERROR("Failed to create fd table for process");
+        return NULL;
+    }
     proc->entry_point = 0;
     proc->user_stack = 0;
     copy_process_name(proc, name);
@@ -212,8 +223,13 @@ void process_destroy(process_t *proc) {
         free_pages((uint64_t)proc->kernel_stack, KERNEL_STACK_ORDER);
     }
 
+    /* Free file descriptor table */
+    if (proc->fd_table) {
+        fd_table_destroy(proc->fd_table);
+        proc->fd_table = NULL;
+    }
+
     /* TODO: Free user address space when implemented */
-    /* TODO: Free file descriptor table when implemented */
 
     /* Remove from process table */
     process_table[pid] = NULL;

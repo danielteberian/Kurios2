@@ -6,6 +6,9 @@
 #include <stdbool.h>
 #include "../sched/thread.h"
 
+/* Forward declaration */
+struct fd_table;
+
 /* Process ID type */
 typedef uint32_t pid_t;
 
@@ -60,8 +63,8 @@ typedef struct process {
     uint64_t start_time;            /* Time when process was created (ticks) */
     uint64_t cpu_time;              /* Total CPU time used (ticks) */
 
-    /* File descriptors (placeholder for now - NULL until implemented) */
-    void *fd_table;                 /* Per-process file descriptor table */
+    /* File descriptors */
+    struct fd_table *fd_table;      /* Per-process file descriptor table */
 
     /* User-space entry (for new processes) */
     uint64_t entry_point;           /* User-space entry address */

@@ -177,6 +177,27 @@
   - fork_child_entry() - Thread entry for child, returns via SYSRET with RAX=0
   - fork_child_return() - Assembly helper to restore frame and SYSRET
   - Parent returns child PID, child returns 0
+- [2026-01-27] exec() system call (`kernel/syscall/syscall.c`)
+  - sys_execve_impl() - Replace process image with new executable
+  - Opens ELF file via VFS, reads into kernel buffer
+  - Creates new address space and loads ELF via elf_load()
+  - Sets up user stack at 0x7FFFFFF00000 (64KB)
+  - Destroys old address space, updates process CR3
+  - Modifies syscall frame to return to new entry point
+  - Closes FD_CLOEXEC descriptors on exec
+  - Does not return on success (returns to new program)
+- [2026-01-27] Per-process file descriptor table (`kernel/fs/fd_table.c`)
+  - fd_table_t structure with 256 entries per process
+  - fd_table_create() - Create empty fd table
+  - fd_table_destroy() - Close all files and free table
+  - fd_table_clone() - Duplicate for fork (increment file ref counts)
+  - fd_table_close_cloexec() - Close FD_CLOEXEC descriptors on exec
+  - fd_table_alloc/free/get - Manage individual descriptors
+  - FD_CLOEXEC flag support for close-on-exec behavior
+  - Integrated with VFS (vfs.c uses per-process tables)
+  - Integrated with process management (process.c creates/destroys tables)
+  - fork() clones parent's fd table to child
+  - Fallback to global table before process subsystem initialized
 
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script

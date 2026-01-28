@@ -1,10 +1,12 @@
 /* vfs.c - Virtual File System implementation */
 
 #include "vfs.h"
+#include "fd_table.h"
 #include "../lib/string.h"
 #include "../mm/slab.h"
 #include "../debug/debug.h"
 #include "../sync/spinlock.h"
+#include "../process/process.h"
 
 /* Slab caches */
 static kmem_cache_t *node_cache;
@@ -374,13 +376,34 @@ vfs_node_t *vfs_lookup_parent(const char *path, char *name_out, size_t name_size
 /*
  * File Descriptor Management
  */
-static int alloc_fd(void) {
+
+/*
+ * Get the current process's fd table
+ * Falls back to global fd_table if process subsystem not initialized
+ */
+static fd_table_t *get_current_fd_table(void) {
+    if (process_is_initialized()) {
+        process_t *proc = process_current();
+        if (proc && proc->fd_table) {
+            return proc->fd_table;
+        }
+    }
+    /* Fallback: process subsystem not yet initialized, use kernel's table */
+    return NULL;
+}
+
+static int alloc_fd(file_t *file) {
+    fd_table_t *fdt = get_current_fd_table();
+    if (fdt) {
+        return fd_table_alloc(fdt, file, 0);
+    }
+
+    /* Fallback to global table */
     uint64_t flags = spin_lock_irqsave(&fd_lock);
 
     for (int i = 0; i < VFS_MAX_FDS; i++) {
         if (fd_table[i] == NULL) {
-            /* Reserve it */
-            fd_table[i] = (file_t *)1;  /* Placeholder */
+            fd_table[i] = file;
             spin_unlock_irqrestore(&fd_lock, flags);
             return i;
         }
@@ -395,6 +418,13 @@ static void free_fd(int fd) {
         return;
     }
 
+    fd_table_t *fdt = get_current_fd_table();
+    if (fdt) {
+        fd_table_free(fdt, fd);
+        return;
+    }
+
+    /* Fallback to global table */
     uint64_t flags = spin_lock_irqsave(&fd_lock);
     fd_table[fd] = NULL;
     spin_unlock_irqrestore(&fd_lock, flags);
@@ -404,6 +434,13 @@ static file_t *get_file(int fd) {
     if (fd < 0 || fd >= VFS_MAX_FDS) {
         return NULL;
     }
+
+    fd_table_t *fdt = get_current_fd_table();
+    if (fdt) {
+        return fd_table_get(fdt, fd);
+    }
+
+    /* Fallback to global table */
     return fd_table[fd];
 }
 
@@ -453,17 +490,9 @@ int vfs_open(const char *path, uint32_t flags) {
         return VFS_ENOTDIR;
     }
 
-    /* Allocate file descriptor */
-    int fd = alloc_fd();
-    if (fd < 0) {
-        vfs_node_unref(node);
-        return VFS_EMFILE;
-    }
-
-    /* Create file structure */
+    /* Create file structure first */
     file_t *file = kmem_cache_alloc(file_cache);
     if (!file) {
-        free_fd(fd);
         vfs_node_unref(node);
         return VFS_ENOMEM;
     }
@@ -475,12 +504,20 @@ int vfs_open(const char *path, uint32_t flags) {
     file->ref_count = 1;
     file->dir_index = 0;
 
+    /* Allocate file descriptor */
+    int fd = alloc_fd(file);
+    if (fd < 0) {
+        kmem_cache_free(file_cache, file);
+        vfs_node_unref(node);
+        return VFS_EMFILE;
+    }
+
     /* Call open callback */
     if (node->ops && node->ops->open) {
         int err = node->ops->open(node, flags);
         if (err != VFS_OK) {
-            kmem_cache_free(file_cache, file);
             free_fd(fd);
+            kmem_cache_free(file_cache, file);
             vfs_node_unref(node);
             return err;
         }
@@ -499,11 +536,6 @@ int vfs_open(const char *path, uint32_t flags) {
     if (flags & O_APPEND) {
         file->offset = node->size;
     }
-
-    /* Store in FD table */
-    uint64_t irqflags = spin_lock_irqsave(&fd_lock);
-    fd_table[fd] = file;
-    spin_unlock_irqrestore(&fd_lock, irqflags);
 
     return fd;
 }

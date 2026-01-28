@@ -29,7 +29,7 @@
 16. [x] Syscall infrastructure (SYSCALL/SYSRET, syscall table)
 17. [x] User-space entry (ring 3 transition)
 18. [x] fork() system call
-19. [ ] exec() system call
+19. [x] exec() system call
 
 ### Device Drivers
 15. [x] Keyboard driver (PS/2 keyboard via IRQ1)
@@ -45,11 +45,13 @@
 - None
 
 ## Next Up
-- [ ] **exec() system call** - Load and execute ELF from VFS
-- [ ] **Per-process file descriptor table** - Separate fd tables per process
 - [ ] **ACPI table parsing** - Find MADT, HPET, FADT
+- [ ] **APIC setup** - Local APIC + I/O APIC
+- [ ] **Initial ramdisk** - initrd/initramfs support
 
 ## Completed Recently
+- [x] Per-process file descriptor table - IMPLEMENTED (fd_table.c, fork clones fds, exec closes FD_CLOEXEC)
+- [x] exec() system call - IMPLEMENTED (sys_execve_impl, ELF loading, address space replacement)
 - [x] fork() system call - IMPLEMENTED (sys_fork_impl, address space cloning)
 - [x] User-space entry (ring 3) - IMPLEMENTED (IRETQ, TSS.RSP0)
 - [x] Syscall infrastructure - VERIFIED WORKING (SYSCALL/SYSRET, syscall table)
