@@ -109,6 +109,10 @@ static uint32_t calc_objs_per_slab(size_t obj_size, size_t slab_pages) {
  */
 void slab_init(void) {
     INFO("Initializing slab allocator...");
+
+    /* Explicitly initialize heap_current in case static init failed */
+    heap_current = KHEAP_START;
+
     DEBUG("Heap start: 0x%llx, end: 0x%llx", (unsigned long long)KHEAP_START, (unsigned long long)KHEAP_END);
 
     /* Create kmalloc caches for each size class */

@@ -33,6 +33,24 @@ static spinlock_t fd_lock = SPINLOCK_INIT;
 void vfs_init(void) {
     INFO("Initializing VFS...");
 
+    /* Explicitly initialize static variables in case static init failed */
+    num_registered_fs = 0;
+    spin_init(&fs_lock);
+    mount_list = NULL;
+    spin_init(&mount_lock);
+    vfs_root = NULL;
+    spin_init(&fd_lock);
+
+    /* Clear registered filesystems array */
+    for (int i = 0; i < VFS_MAX_FS; i++) {
+        registered_fs[i] = NULL;
+    }
+
+    /* Clear FD table */
+    for (int i = 0; i < VFS_MAX_FDS; i++) {
+        fd_table[i] = NULL;
+    }
+
     /* Create slab caches */
     node_cache = kmem_cache_create("vfs_node", sizeof(vfs_node_t), 8, SLAB_ZERO);
     file_cache = kmem_cache_create("vfs_file", sizeof(file_t), 8, SLAB_ZERO);
@@ -40,11 +58,6 @@ void vfs_init(void) {
 
     if (!node_cache || !file_cache || !mount_cache) {
         panic("VFS: Failed to create slab caches");
-    }
-
-    /* Clear FD table */
-    for (int i = 0; i < VFS_MAX_FDS; i++) {
-        fd_table[i] = NULL;
     }
 
     INFO("VFS initialized");

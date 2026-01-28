@@ -24,7 +24,10 @@
 
 ### Process Management
 13. [x] Multithreading (kernel threads, scheduler, context switching)
-14. [ ] Process abstraction (address spaces, process control blocks)
+14. [x] Process structure and process table (kernel processes, PID management)
+15. [ ] Per-process address spaces (separate page tables)
+16. [ ] Syscall infrastructure (SYSCALL/SYSRET, syscall table)
+17. [ ] User-space entry (ring 3 transition)
 
 ### Device Drivers
 15. [x] Keyboard driver (PS/2 keyboard via IRQ1)
@@ -40,10 +43,12 @@
 - None
 
 ## Next Up
-- [ ] **ACPI table parsing** - Find MADT, HPET, FADT
-- [ ] **Process abstraction** - Address spaces, process control blocks
+- [ ] **Per-process address spaces** - Separate page tables per process
+- [ ] **Syscall infrastructure** - SYSCALL/SYSRET entry point, syscall table
+- [ ] **User-space entry** - Ring 3 transition (iret/sysret)
 
 ## Completed Recently
+- [x] Process structure and process table - VERIFIED WORKING (10 tests, PID 0-255)
 - [x] VFS + Ramfs - VERIFIED WORKING (file ops, directory ops, mounting)
 - [x] GDB Stub - VERIFIED WORKING (remote debugging over serial)
 - [x] Multithreading - VERIFIED WORKING (round-robin scheduler, context switching, preemption)

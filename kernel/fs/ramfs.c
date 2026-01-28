@@ -523,6 +523,39 @@ static fs_ops_t ramfs_fs_ops = {
 void ramfs_init(void) {
     INFO("Initializing ramfs...");
 
+    /* Explicitly initialize all operation tables in case static init failed */
+    ramfs_fs_ops.name = "ramfs";
+    ramfs_fs_ops.mount = ramfs_mount;
+    ramfs_fs_ops.unmount = ramfs_unmount;
+
+    /* File operations */
+    ramfs_file_ops.open = ramfs_file_open;
+    ramfs_file_ops.close = ramfs_file_close;
+    ramfs_file_ops.read = ramfs_file_read;
+    ramfs_file_ops.write = ramfs_file_write;
+    ramfs_file_ops.truncate = ramfs_file_truncate;
+    ramfs_file_ops.stat = ramfs_file_stat;
+    ramfs_file_ops.readdir = NULL;
+    ramfs_file_ops.finddir = NULL;
+    ramfs_file_ops.create = NULL;
+    ramfs_file_ops.unlink = NULL;
+    ramfs_file_ops.mkdir = NULL;
+    ramfs_file_ops.rmdir = NULL;
+
+    /* Directory operations */
+    ramfs_dir_ops.open = ramfs_dir_open;
+    ramfs_dir_ops.close = ramfs_dir_close;
+    ramfs_dir_ops.read = NULL;
+    ramfs_dir_ops.write = NULL;
+    ramfs_dir_ops.truncate = NULL;
+    ramfs_dir_ops.stat = ramfs_file_stat;
+    ramfs_dir_ops.readdir = ramfs_dir_readdir;
+    ramfs_dir_ops.finddir = ramfs_dir_finddir;
+    ramfs_dir_ops.create = ramfs_dir_create;
+    ramfs_dir_ops.unlink = ramfs_dir_unlink;
+    ramfs_dir_ops.mkdir = ramfs_dir_mkdir;
+    ramfs_dir_ops.rmdir = ramfs_dir_rmdir;
+
     /* Create slab cache for ramfs data */
     ramfs_data_cache = kmem_cache_create("ramfs_data", sizeof(ramfs_data_t), 8, SLAB_ZERO);
     if (!ramfs_data_cache) {

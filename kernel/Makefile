@@ -26,7 +26,8 @@ C_SOURCES := \
     drivers/vga.c \
     drivers/pit.c \
     sched/thread.c \
-    sched/sched.c
+    sched/sched.c \
+    process/process.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
@@ -96,6 +97,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/sync
 	mkdir -p $(BUILD_DIR)/drivers
 	mkdir -p $(BUILD_DIR)/sched
+	mkdir -p $(BUILD_DIR)/process
 	mkdir -p $(BUILD_DIR)/tests
 
 # Ensure directories exist before compiling

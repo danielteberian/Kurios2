@@ -19,6 +19,7 @@
 #include "drivers/pit.h"
 #include "sched/thread.h"
 #include "sched/sched.h"
+#include "process/process.h"
 #include "debug/gdb_stub.h"
 #include "fs/vfs.h"
 #include "fs/ramfs.h"
@@ -42,7 +43,7 @@ static void (*_test_ctor)(void) = test_constructor;
  * This function intentionally corrupts its stack canary.
  * Only enable this to test that stack protection works!
  */
-__attribute__((noinline, optimize("O0")))
+__attribute__((noinline, optimize("O0"), unused))
 static void test_stack_smash(void) {
     char buf[16];
     volatile char *p = buf;
@@ -436,6 +437,14 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize threading subsystem */
     thread_init();
+
+    /* Initialize process management */
+    process_init();
+
+#ifdef DEBUG_TESTS
+    /* Run process subsystem tests */
+    process_run_tests();
+#endif
 
     /* Create demo threads */
     thread_t *t1 = thread_create("worker1", demo_thread, (void *)1);

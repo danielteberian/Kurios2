@@ -132,6 +132,21 @@
   - Fixed kernel load to read in 64-sector chunks
   - Supports kernels > 64KB
 
+### Process Management [VERIFIED]
+- [2026-01-27] Process structure and process table (`kernel/process/process.c`)
+  - process_t structure with PID, state, CR3, kernel stack, parent PID
+  - Process states: UNUSED, EMBRYO, READY, RUNNING, BLOCKED, ZOMBIE, DEAD
+  - Process table (256 max processes)
+  - PID allocation with wraparound
+  - process_create(), process_destroy()
+  - process_get_by_pid(), process_current()
+  - process_exit() with exit code
+  - Kernel process (PID 0) created at init
+  - 10 unit tests (all passing)
+- [2026-01-27] Integration with threading subsystem
+  - Kernel process owns boot thread
+  - Per-process kernel stack allocation (16KB)
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000
