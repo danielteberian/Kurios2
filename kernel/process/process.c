@@ -11,6 +11,7 @@
 #include "../arch/x86_64/cpu.h"
 #include "../lib/string.h"
 #include "../fs/fd_table.h"
+#include "../fs/vfs.h"
 #include "../signal/signal.h"
 
 /* Kernel stack size: 16KB (4 pages) - same as thread stacks */
@@ -80,6 +81,54 @@ static pid_t alloc_pid_locked(void) {
         }
     }
     return PID_INVALID;
+}
+
+/*
+ * Set up stdio (fd 0, 1, 2) for a process using /dev/console
+ * Must be called after VFS and TTY are initialized
+ */
+static void setup_stdio(fd_table_t *fdt) {
+    if (!fdt) {
+        return;
+    }
+
+    /* Look up /dev/console */
+    vfs_node_t *console = vfs_lookup("/dev/console");
+    if (!console) {
+        DEBUG("setup_stdio: /dev/console not found (TTY not initialized yet)");
+        return;
+    }
+
+    /* Create file structures for stdin, stdout, stderr */
+    for (int i = 0; i < 3; i++) {
+        file_t *file = kmalloc(sizeof(file_t));
+        if (!file) {
+            vfs_node_unref(console);
+            ERROR("setup_stdio: Failed to allocate file for fd %d", i);
+            return;
+        }
+
+        memset(file, 0, sizeof(file_t));
+        file->node = console;
+        file->flags = (i == 0) ? O_RDONLY : O_WRONLY;
+        file->offset = 0;
+        file->ref_count = 1;
+
+        /* Increment node ref count for each fd */
+        vfs_node_ref(console);
+        console->open_count++;
+
+        /* Install at specific fd */
+        if (fd_table_alloc_at(fdt, i, file, 0) < 0) {
+            kfree(file);
+            ERROR("setup_stdio: Failed to install fd %d", i);
+        }
+    }
+
+    /* Release the extra ref from vfs_lookup */
+    vfs_node_unref(console);
+
+    DEBUG("setup_stdio: stdin/stdout/stderr connected to /dev/console");
 }
 
 /*
@@ -199,6 +248,7 @@ process_t *process_create(const char *name) {
         return NULL;
     }
     signal_state_init(proc->signals);
+    setup_stdio(proc->fd_table);  /* Connect stdin/stdout/stderr to /dev/console */
     proc->entry_point = 0;
     proc->user_stack = 0;
     proc->brk = 0x10000000;  /* Default heap start */

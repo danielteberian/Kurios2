@@ -312,6 +312,14 @@
   - 26+ syscall tests in syscall_run_tests()
   - Tests: identity, time, memory, filesystem, I/O, scheduling, signals, error handling
 
+### Standard I/O [IMPLEMENTED]
+- [2026-02-01] Automatic stdio setup (`kernel/process/process.c`)
+  - setup_stdio() connects fd 0/1/2 to /dev/console
+  - Called during process_create() for new processes
+  - stdin (fd 0) opened read-only
+  - stdout/stderr (fd 1/2) opened write-only
+  - Enables processes to use read(0)/write(1) immediately
+
 ### TTY [IMPLEMENTED]
 - [2026-02-01] TTY driver (`kernel/drivers/tty.c`, `kernel/drivers/tty.h`)
   - /dev/console character device created at init
