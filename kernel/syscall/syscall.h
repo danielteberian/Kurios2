@@ -48,6 +48,7 @@
 #define SYS_RMDIR       84
 #define SYS_UNLINK      87
 #define SYS_READLINK    89
+#define SYS_UMASK       95
 #define SYS_GETTIMEOFDAY 96
 #define SYS_GETUID      102
 #define SYS_SYSLOG      103

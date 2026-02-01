@@ -255,6 +255,7 @@ process_t *process_create(const char *name) {
     proc->pgrp = pid;        /* Process group = own PID by default */
     proc->session_id = current_process ? current_process->session_id : pid;
     strncpy(proc->cwd, "/", sizeof(proc->cwd));  /* Default to root */
+    proc->umask = 022;  /* Default umask: rw-r--r-- for files, rwxr-xr-x for dirs */
     copy_process_name(proc, name);
 
     /* Add to process table */

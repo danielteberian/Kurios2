@@ -83,6 +83,9 @@ typedef struct process {
 
     /* Working directory */
     char cwd[256];                  /* Current working directory */
+
+    /* File creation mask */
+    uint32_t umask;                 /* File mode creation mask (default 022) */
 } process_t;
 
 /*

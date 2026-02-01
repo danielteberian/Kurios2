@@ -849,6 +849,26 @@ static int64_t sys_chdir(uint64_t pathname, uint64_t arg2, uint64_t arg3,
 }
 
 /*
+ * sys_umask - set file mode creation mask
+ *
+ * @param mask  New umask value
+ * @return Previous umask value
+ */
+static int64_t sys_umask(uint64_t mask, uint64_t arg2, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    process_t *proc = process_current();
+    if (!proc) {
+        return 022;  /* Default if no process */
+    }
+
+    uint32_t old_mask = proc->umask;
+    proc->umask = (uint32_t)(mask & 0777);  /* Only permission bits */
+    return old_mask;
+}
+
+/*
  * sys_mkdir - create a directory
  */
 static int64_t sys_mkdir(uint64_t pathname, uint64_t mode, uint64_t arg3,
@@ -2285,6 +2305,7 @@ void syscall_init(void) {
     syscall_register(SYS_RMDIR, sys_rmdir);
     syscall_register(SYS_UNLINK, sys_unlink);
     syscall_register(SYS_READLINK, sys_readlink);
+    syscall_register(SYS_UMASK, sys_umask);
     syscall_register(SYS_GETTIMEOFDAY, sys_gettimeofday);
     syscall_register(SYS_GETUID, sys_getuid);
     syscall_register(SYS_SYSLOG, sys_syslog);

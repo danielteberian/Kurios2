@@ -50,6 +50,7 @@
 - [ ] **PTY** - Pseudo-terminals for remote shells
 
 ## Completed Recently
+- [x] **umask syscall** - IMPLEMENTED (per-process file creation mask, default 022)
 - [x] **fcntl syscall** - IMPLEMENTED (F_DUPFD, F_GETFD, F_SETFD, F_GETFL, F_SETFL)
 - [x] **/dev/urandom** - IMPLEMENTED (xorshift64 PRNG seeded from TSC)
 - [x] **isatty/ioctl** - IMPLEMENTED (TCGETS, TIOCGWINSZ for TTY detection)
