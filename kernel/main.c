@@ -29,6 +29,7 @@
 #include "fs/ramfs.h"
 #include "lib/string.h"
 #include "boot_info.h"
+#include "acpi/acpi.h"
 
 #ifdef DEBUG_TESTS
 /* Test global constructor */
@@ -343,7 +344,15 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize slab allocator (kernel heap) */
     slab_init();
 
+    /* Initialize ACPI table parsing */
+    if (acpi_init(boot_info) != 0) {
+        WARN("ACPI initialization failed - APIC info not available");
+    }
+
 #ifdef DEBUG_TESTS
+    /* Run ACPI tests */
+    acpi_run_tests();
+
     /* Run address space tests (requires slab allocator) */
     as_run_tests();
 #endif
@@ -493,12 +502,6 @@ void kernel_main(BootInfo *boot_info) {
         hlt();
     }
 #endif
-
-    /* Print ACPI info if available */
-    if (boot_info->flags & BOOT_FLAG_ACPI) {
-        kprintf("\n=== ACPI ===\n");
-        kprintf("  RSDP address: 0x%016llx\n", boot_info->acpi_rsdp);
-    }
 
     /* Print framebuffer info if available */
     if (boot_info->flags & BOOT_FLAG_FRAMEBUFFER) {

@@ -199,6 +199,21 @@
   - fork() clones parent's fd table to child
   - Fallback to global table before process subsystem initialized
 
+### ACPI Table Parsing [VERIFIED]
+- [2026-01-31] ACPI subsystem (`kernel/acpi/acpi.c`, `kernel/acpi/acpi.h`)
+  - RSDP discovery (boot-provided hint, EBDA, BIOS ROM search)
+  - RSDT/XSDT parsing with checksum validation
+  - MADT parsing (Local APIC address, CPUs, I/O APICs, interrupt overrides)
+  - FADT parsing (PM timer port, SCI interrupt)
+  - HPET parsing (base address)
+  - Parsed acpi_info_t structure for kernel use
+  - acpi_isa_irq_to_gsi() - IRQ to GSI mapping with overrides
+  - acpi_get_irq_flags() - Get polarity/trigger mode for IRQs
+  - Comprehensive test suite (10 tests in DEBUG_TESTS mode)
+- [2026-01-31] Verified: Local APIC at 0xFEE00000, I/O APIC at 0xFEC00000
+- [2026-01-31] Verified: HPET at 0xFED00000, IRQ overrides (timer on GSI 2)
+- [2026-01-31] Ready for APIC initialization
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

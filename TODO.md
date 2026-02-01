@@ -14,7 +14,7 @@
 8. [x] IDT + exception handlers (page fault, GPF, double fault, etc.)
 
 ### Hardware Abstraction
-8. [ ] ACPI table parsing (find MADT, HPET, FADT)
+8. [x] ACPI table parsing (find MADT, HPET, FADT)
 9. [ ] APIC setup (Local APIC + I/O APIC, replace legacy PIC)
 10. [x] Timer (PIT at 100Hz)
 11. [x] Basic spinlocks/mutexes
@@ -45,11 +45,11 @@
 - None
 
 ## Next Up
-- [ ] **ACPI table parsing** - Find MADT, HPET, FADT
 - [ ] **APIC setup** - Local APIC + I/O APIC
 - [ ] **Initial ramdisk** - initrd/initramfs support
 
 ## Completed Recently
+- [x] ACPI table parsing - VERIFIED WORKING (MADT, FADT, HPET; Local APIC, I/O APIC, IRQ overrides)
 - [x] Per-process file descriptor table - IMPLEMENTED (fd_table.c, fork clones fds, exec closes FD_CLOEXEC)
 - [x] exec() system call - IMPLEMENTED (sys_execve_impl, ELF loading, address space replacement)
 - [x] fork() system call - IMPLEMENTED (sys_fork_impl, address space cloning)
