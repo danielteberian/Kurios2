@@ -320,9 +320,10 @@
   - Enables isatty() to work correctly for interactive detection
 
 ### Device Nodes [IMPLEMENTED]
-- [2026-02-01] /dev/null and /dev/zero (`kernel/drivers/tty.c`)
+- [2026-02-01] /dev/null, /dev/zero, /dev/urandom (`kernel/drivers/tty.c`)
   - /dev/null: Returns EOF on read, discards all writes
   - /dev/zero: Returns zeros on read, discards all writes
+  - /dev/urandom: Returns random bytes (xorshift64 PRNG, TSC seeded)
   - Created during tty_init()
 
 ### Standard I/O [IMPLEMENTED]

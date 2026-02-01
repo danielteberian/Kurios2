@@ -49,6 +49,47 @@ static node_ops_t zero_ops = {
     .write = null_write,  /* Same as /dev/null */
 };
 
+/* /dev/urandom - returns random bytes */
+static uint64_t rng_state = 0;
+
+static inline uint64_t rdtsc(void) {
+    uint32_t lo, hi;
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((uint64_t)hi << 32) | lo;
+}
+
+static uint64_t xorshift64(void) {
+    if (rng_state == 0) {
+        rng_state = rdtsc() ^ 0x5DEECE66DULL;
+    }
+    uint64_t x = rng_state;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    rng_state = x;
+    return x;
+}
+
+static ssize_t urandom_read(vfs_node_t *node, void *buf, size_t size, uint64_t offset) {
+    (void)node; (void)offset;
+    uint8_t *dst = (uint8_t *)buf;
+    size_t i = 0;
+
+    while (i < size) {
+        uint64_t r = xorshift64();
+        size_t chunk = (size - i < 8) ? (size - i) : 8;
+        for (size_t j = 0; j < chunk; j++) {
+            dst[i++] = (uint8_t)(r >> (j * 8));
+        }
+    }
+    return (ssize_t)size;
+}
+
+static node_ops_t urandom_ops = {
+    .read = urandom_read,
+    .write = null_write,  /* Discard writes */
+};
+
 /*
  * Write to TTY (VGA output)
  */
@@ -182,6 +223,20 @@ void tty_init(void) {
         dev->children = zero_node;
     }
 
+    /* Create /dev/urandom */
+    vfs_node_t *urandom_node = vfs_node_alloc();
+    if (urandom_node) {
+        strcpy(urandom_node->name, "urandom");
+        urandom_node->type = VFS_CHARDEV;
+        urandom_node->ops = &urandom_ops;
+        urandom_node->permissions = VFS_PERM_READ | VFS_PERM_WRITE;
+        urandom_node->ref_count = 1;
+        urandom_node->parent = dev;
+        urandom_node->next = dev->children;
+        if (dev->children) dev->children->prev = urandom_node;
+        dev->children = urandom_node;
+    }
+
     vfs_node_unref(dev);
-    INFO("TTY initialized: /dev/console, /dev/null, /dev/zero");
+    INFO("TTY initialized: /dev/console, /dev/null, /dev/zero, /dev/urandom");
 }
