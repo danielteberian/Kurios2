@@ -481,6 +481,78 @@ static int64_t sys_dup2(uint64_t oldfd, uint64_t newfd, uint64_t arg3,
 }
 
 /*
+ * sys_fcntl - file control operations
+ *
+ * @param fd   File descriptor
+ * @param cmd  Command (F_DUPFD, F_GETFD, F_SETFD, F_GETFL, F_SETFL)
+ * @param arg  Command-specific argument
+ */
+static int64_t sys_fcntl(uint64_t fd, uint64_t cmd, uint64_t arg,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    DEBUG("sys_fcntl(fd=%llu, cmd=%llu, arg=%llu)", fd, cmd, arg);
+
+    process_t *proc = process_current();
+    if (!proc || !proc->fd_table) {
+        return -EBADF;
+    }
+
+    file_t *file = fd_table_get(proc->fd_table, (int)fd);
+    if (!file) {
+        return -EBADF;
+    }
+
+    switch (cmd) {
+    case F_DUPFD: {
+        /* Duplicate fd to lowest available >= arg */
+        int min_fd = (int)arg;
+        if (min_fd < 0 || min_fd >= FD_MAX) {
+            return -EINVAL;
+        }
+        /* Find lowest available fd >= min_fd */
+        for (int new_fd = min_fd; new_fd < FD_MAX; new_fd++) {
+            if (!fd_table_get(proc->fd_table, new_fd)) {
+                /* Found free slot, duplicate file reference */
+                file->ref_count++;
+                int result = fd_table_alloc_at(proc->fd_table, new_fd, file, 0);
+                if (result < 0) {
+                    file->ref_count--;
+                    return -EMFILE;
+                }
+                return new_fd;
+            }
+        }
+        return -EMFILE;
+    }
+
+    case F_GETFD:
+        /* Get fd flags (FD_CLOEXEC) */
+        return fd_table_get_flags(proc->fd_table, (int)fd);
+
+    case F_SETFD:
+        /* Set fd flags (only FD_CLOEXEC is valid) */
+        if (fd_table_set_flags(proc->fd_table, (int)fd, (uint32_t)(arg & FD_CLOEXEC)) < 0) {
+            return -EBADF;
+        }
+        return 0;
+
+    case F_GETFL:
+        /* Get file status flags */
+        return file->flags;
+
+    case F_SETFL:
+        /* Set file status flags (only O_APPEND and O_NONBLOCK can be changed) */
+        file->flags = (file->flags & ~(O_APPEND | O_NONBLOCK)) |
+                      (arg & (O_APPEND | O_NONBLOCK));
+        return 0;
+
+    default:
+        return -EINVAL;
+    }
+}
+
+/*
  * sys_getpid - get current process ID
  */
 static int64_t sys_getpid(uint64_t arg1, uint64_t arg2,
@@ -2196,6 +2268,7 @@ void syscall_init(void) {
     syscall_register(SYS_SCHED_YIELD, sys_sched_yield);
     syscall_register(SYS_DUP, sys_dup);
     syscall_register(SYS_DUP2, sys_dup2);
+    syscall_register(SYS_FCNTL, sys_fcntl);
     syscall_register(SYS_NANOSLEEP, sys_nanosleep);
     syscall_register(SYS_EXIT, sys_exit);
     syscall_register(SYS_GETPID, sys_getpid);

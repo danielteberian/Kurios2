@@ -38,6 +38,7 @@
 #define SYS_WAIT4       61      /* waitpid - wait for child process */
 #define SYS_KILL        62      /* kill - send signal */
 #define SYS_UNAME       63
+#define SYS_FCNTL       72
 #define SYS_TRUNCATE    76
 #define SYS_FTRUNCATE   77
 #define SYS_GETDENTS    78
@@ -85,6 +86,15 @@
 #define MAP_FIXED       0x10
 #define MAP_ANONYMOUS   0x20
 #define MAP_FAILED      ((void *)-1)
+
+/* fcntl commands */
+#define F_DUPFD         0       /* Duplicate fd */
+#define F_GETFD         1       /* Get fd flags */
+#define F_SETFD         2       /* Set fd flags */
+#define F_GETFL         3       /* Get file status flags */
+#define F_SETFL         4       /* Set file status flags */
+
+/* Note: FD_CLOEXEC defined in fd_table.h, O_NONBLOCK/O_APPEND in vfs.h */
 
 /* access() modes */
 #define F_OK            0       /* Test for existence */
