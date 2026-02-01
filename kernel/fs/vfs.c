@@ -904,6 +904,43 @@ int vfs_unlink(const char *path) {
     return err;
 }
 
+int vfs_rename(const char *oldpath, const char *newpath) {
+    if (!oldpath || !newpath) {
+        return VFS_EINVAL;
+    }
+
+    /* Get old parent and name */
+    char old_name[VFS_NAME_MAX + 1];
+    vfs_node_t *old_parent = vfs_lookup_parent(oldpath, old_name, sizeof(old_name));
+    if (!old_parent) {
+        return VFS_ENOENT;
+    }
+
+    /* Get new parent and name */
+    char new_name[VFS_NAME_MAX + 1];
+    vfs_node_t *new_parent = vfs_lookup_parent(newpath, new_name, sizeof(new_name));
+    if (!new_parent) {
+        vfs_node_unref(old_parent);
+        return VFS_ENOENT;
+    }
+
+    /* Both parents must be directories */
+    if (old_parent->type != VFS_DIR || new_parent->type != VFS_DIR) {
+        vfs_node_unref(old_parent);
+        vfs_node_unref(new_parent);
+        return VFS_ENOTDIR;
+    }
+
+    int err = VFS_EIO;
+    if (old_parent->ops && old_parent->ops->rename) {
+        err = old_parent->ops->rename(old_parent, old_name, new_parent, new_name);
+    }
+
+    vfs_node_unref(old_parent);
+    vfs_node_unref(new_parent);
+    return err;
+}
+
 int vfs_readdir(int fd, dirent_t *dent) {
     if (!dent) {
         return VFS_EINVAL;

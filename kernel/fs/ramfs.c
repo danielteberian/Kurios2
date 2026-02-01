@@ -453,6 +453,52 @@ static int ramfs_dir_rmdir(vfs_node_t *parent, const char *name) {
     return VFS_OK;
 }
 
+static int ramfs_dir_rename(vfs_node_t *old_parent, const char *old_name,
+                            vfs_node_t *new_parent, const char *new_name) {
+    /* Find old node */
+    vfs_node_t *child = old_parent->children;
+    vfs_node_t *node = NULL;
+
+    while (child) {
+        if (strcmp(child->name, old_name) == 0) {
+            node = child;
+            break;
+        }
+        child = child->next;
+    }
+
+    if (!node) {
+        return VFS_ENOENT;
+    }
+
+    /* Can't rename if still open */
+    if (node->open_count > 0) {
+        return VFS_EBUSY;
+    }
+
+    /* Check if target exists */
+    child = new_parent->children;
+    while (child) {
+        if (strcmp(child->name, new_name) == 0) {
+            /* Target exists - could unlink it, but for simplicity just fail */
+            return VFS_EEXIST;
+        }
+        child = child->next;
+    }
+
+    /* Remove from old parent */
+    ramfs_remove_child(old_parent, node);
+
+    /* Update name */
+    strncpy(node->name, new_name, VFS_NAME_MAX);
+    node->name[VFS_NAME_MAX] = '\0';
+
+    /* Add to new parent */
+    ramfs_add_child(new_parent, node);
+
+    return VFS_OK;
+}
+
 /*
  * Operation tables
  */
@@ -484,6 +530,7 @@ static node_ops_t ramfs_dir_ops = {
     .unlink = ramfs_dir_unlink,
     .mkdir = ramfs_dir_mkdir,
     .rmdir = ramfs_dir_rmdir,
+    .rename = ramfs_dir_rename,
 };
 
 /*

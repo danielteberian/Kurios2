@@ -111,6 +111,8 @@ struct node_ops {
     int (*unlink)(vfs_node_t *parent, const char *name);
     int (*mkdir)(vfs_node_t *parent, const char *name);
     int (*rmdir)(vfs_node_t *parent, const char *name);
+    int (*rename)(vfs_node_t *old_parent, const char *old_name,
+                  vfs_node_t *new_parent, const char *new_name);
     int (*truncate)(vfs_node_t *node, uint64_t size);
     int (*stat)(vfs_node_t *node, vfs_stat_t *st);
 };
@@ -207,6 +209,7 @@ int vfs_dup2(int oldfd, int newfd);
 int vfs_mkdir(const char *path);
 int vfs_rmdir(const char *path);
 int vfs_unlink(const char *path);
+int vfs_rename(const char *oldpath, const char *newpath);
 int vfs_readdir(int fd, dirent_t *dent);
 
 /*

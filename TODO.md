@@ -50,6 +50,7 @@
 - [ ] **PTY** - Pseudo-terminals for remote shells
 
 ## Completed Recently
+- [x] **rename syscall** - IMPLEMENTED (vfs_rename, ramfs_dir_rename, move between dirs)
 - [x] **fchdir syscall** - IMPLEMENTED (change directory by fd, builds path from node)
 - [x] **umask syscall** - IMPLEMENTED (per-process file creation mask, default 022)
 - [x] **fcntl syscall** - IMPLEMENTED (F_DUPFD, F_GETFD, F_SETFD, F_GETFL, F_SETFL)

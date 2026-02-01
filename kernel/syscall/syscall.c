@@ -943,6 +943,29 @@ static int64_t sys_umask(uint64_t mask, uint64_t arg2, uint64_t arg3,
 }
 
 /*
+ * sys_rename - rename a file or directory
+ */
+static int64_t sys_rename(uint64_t oldpath, uint64_t newpath, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    char old_buf[OPEN_PATH_MAX];
+    char new_buf[OPEN_PATH_MAX];
+
+    ssize_t len = strncpy_from_user(old_buf, (const char *)oldpath, OPEN_PATH_MAX);
+    if (len < 0) {
+        return len;
+    }
+
+    len = strncpy_from_user(new_buf, (const char *)newpath, OPEN_PATH_MAX);
+    if (len < 0) {
+        return len;
+    }
+
+    return vfs_rename(old_buf, new_buf);
+}
+
+/*
  * sys_mkdir - create a directory
  */
 static int64_t sys_mkdir(uint64_t pathname, uint64_t mode, uint64_t arg3,
@@ -2376,6 +2399,7 @@ void syscall_init(void) {
     syscall_register(SYS_GETCWD, sys_getcwd);
     syscall_register(SYS_CHDIR, sys_chdir);
     syscall_register(SYS_FCHDIR, sys_fchdir);
+    syscall_register(SYS_RENAME, sys_rename);
     syscall_register(SYS_MKDIR, sys_mkdir);
     syscall_register(SYS_RMDIR, sys_rmdir);
     syscall_register(SYS_UNLINK, sys_unlink);
