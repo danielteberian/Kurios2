@@ -326,3 +326,11 @@ void idt_init(void) {
     DEBUG("  IRQs: INT %d-%d", IRQ_BASE, IRQ_BASE + 15);
     DEBUG("  IST stacks configured for DF, NMI, MCE");
 }
+
+/*
+ * Load the IDT on the current CPU
+ * Used by APs during SMP initialization
+ */
+void idt_load(void) {
+    idt_flush(&idt_ptr);
+}

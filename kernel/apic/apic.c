@@ -371,6 +371,159 @@ int apic_init(void)
     return 0;
 }
 
+/*
+ * Wait for ICR to be ready (busy bit clear)
+ */
+void lapic_wait_ipi(void)
+{
+    if (!lapic_base) return;
+
+    /* Wait for delivery status bit to clear */
+    while (lapic_read(LAPIC_ICR_LO) & LAPIC_ICR_BUSY) {
+        cpu_pause();
+    }
+}
+
+/*
+ * Send INIT IPI to a specific APIC
+ */
+void lapic_send_init(uint8_t apic_id)
+{
+    if (!lapic_base) return;
+
+    lapic_wait_ipi();
+
+    /* Set destination APIC ID in high part of ICR */
+    lapic_write(LAPIC_ICR_HI, (uint32_t)apic_id << 24);
+
+    /* Send INIT IPI: level=1, assert, INIT delivery mode */
+    lapic_write(LAPIC_ICR_LO, LAPIC_ICR_INIT | LAPIC_ICR_LEVEL | LAPIC_ICR_ASSERT);
+
+    lapic_wait_ipi();
+}
+
+/*
+ * Send INIT IPI de-assert (broadcast)
+ */
+void lapic_send_init_deassert(void)
+{
+    if (!lapic_base) return;
+
+    lapic_wait_ipi();
+
+    /* INIT de-assert is sent to all including self */
+    lapic_write(LAPIC_ICR_HI, 0);
+    lapic_write(LAPIC_ICR_LO, LAPIC_ICR_INIT | LAPIC_ICR_LEVEL |
+                LAPIC_ICR_DEASSERT | LAPIC_ICR_DEST_ALL);
+
+    lapic_wait_ipi();
+}
+
+/*
+ * Send Startup IPI (SIPI) to a specific APIC
+ */
+void lapic_send_sipi(uint8_t apic_id, uint8_t vector)
+{
+    if (!lapic_base) return;
+
+    lapic_wait_ipi();
+
+    /* Set destination APIC ID */
+    lapic_write(LAPIC_ICR_HI, (uint32_t)apic_id << 24);
+
+    /* Send SIPI: startup delivery mode with vector */
+    lapic_write(LAPIC_ICR_LO, LAPIC_ICR_STARTUP | vector);
+
+    lapic_wait_ipi();
+}
+
+/*
+ * Send IPI to a specific APIC with a given vector
+ */
+void ipi_send(uint8_t apic_id, uint8_t vector)
+{
+    if (!lapic_base) return;
+
+    lapic_wait_ipi();
+
+    /* Set destination APIC ID */
+    lapic_write(LAPIC_ICR_HI, (uint32_t)apic_id << 24);
+
+    /* Send fixed IPI with vector */
+    lapic_write(LAPIC_ICR_LO, LAPIC_DM_FIXED | vector);
+
+    lapic_wait_ipi();
+}
+
+/*
+ * Send IPI to all CPUs except self
+ */
+void ipi_send_all_others(uint8_t vector)
+{
+    if (!lapic_base) return;
+
+    lapic_wait_ipi();
+
+    /* Destination is "all excluding self" */
+    lapic_write(LAPIC_ICR_HI, 0);
+    lapic_write(LAPIC_ICR_LO, LAPIC_DM_FIXED | LAPIC_ICR_DEST_OTHERS | vector);
+
+    lapic_wait_ipi();
+}
+
+/*
+ * Send IPI to self
+ */
+void ipi_send_self(uint8_t vector)
+{
+    if (!lapic_base) return;
+
+    lapic_wait_ipi();
+
+    /* Destination is "self" */
+    lapic_write(LAPIC_ICR_HI, 0);
+    lapic_write(LAPIC_ICR_LO, LAPIC_DM_FIXED | LAPIC_ICR_DEST_SELF | vector);
+
+    lapic_wait_ipi();
+}
+
+/*
+ * Initialize Local APIC for an AP
+ * Similar to BSP init but without remapping IRQs
+ */
+void lapic_init_ap(void)
+{
+    if (!lapic_base) return;
+
+    /* Set Task Priority to 0 (accept all interrupts) */
+    lapic_write(LAPIC_TPR, 0);
+
+    /* Set Destination Format Register to flat model */
+    lapic_write(LAPIC_DFR, 0xFFFFFFFF);
+
+    /* Set Logical Destination Register based on CPU ID */
+    uint32_t id = (lapic_read(LAPIC_ID) >> 24) & 0xFF;
+    lapic_write(LAPIC_LDR, (1 << id) << 24);
+
+    /* Configure spurious interrupt vector and enable APIC */
+    lapic_write(LAPIC_SVR, LAPIC_SVR_ENABLE | APIC_VECTOR_SPURIOUS);
+
+    /* Mask all LVT entries */
+    lapic_write(LAPIC_LVT_TIMER, LAPIC_LVT_MASKED);
+    lapic_write(LAPIC_LVT_LINT0, LAPIC_LVT_MASKED);
+    lapic_write(LAPIC_LVT_LINT1, LAPIC_LVT_MASKED);
+    lapic_write(LAPIC_LVT_ERROR, LAPIC_LVT_MASKED);
+
+    /* Clear any pending errors */
+    lapic_write(LAPIC_ESR, 0);
+    lapic_write(LAPIC_ESR, 0);
+
+    /* Send EOI to clear any pending interrupts */
+    lapic_write(LAPIC_EOI, 0);
+
+    DEBUG("APIC: AP Local APIC initialized (ID=%u)", id);
+}
+
 #ifdef DEBUG_TESTS
 /*
  * Run APIC tests

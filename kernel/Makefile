@@ -7,7 +7,7 @@ BUILD_DIR := ../build/kernel
 SRC_DIR := .
 
 # Source files
-ASM_SOURCES := entry.asm arch/x86_64/gdt_flush.asm arch/x86_64/isr.asm sched/context.asm syscall/syscall_entry.asm user/ring3_enter.asm
+ASM_SOURCES := entry.asm arch/x86_64/gdt_flush.asm arch/x86_64/isr.asm sched/context.asm syscall/syscall_entry.asm user/ring3_enter.asm smp/ap_trampoline.asm
 C_SOURCES := \
     main.c \
     stack_protector.c \
@@ -37,7 +37,10 @@ C_SOURCES := \
     loader/elf_loader.c \
     acpi/acpi.c \
     apic/apic.c \
-    initrd/initrd.c
+    initrd/initrd.c \
+    smp/percpu.c \
+    smp/smp.c \
+    smp/tlb.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
@@ -115,6 +118,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/acpi
 	mkdir -p $(BUILD_DIR)/apic
 	mkdir -p $(BUILD_DIR)/initrd
+	mkdir -p $(BUILD_DIR)/smp
 
 # Ensure directories exist before compiling
 $(BUILD_DIR)/debug/%.o: | $(BUILD_DIR)

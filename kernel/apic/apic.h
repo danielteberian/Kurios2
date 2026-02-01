@@ -125,11 +125,21 @@
 #define APIC_VECTOR_SPURIOUS 0xFF   /* Spurious interrupt vector */
 
 /*
+ * IPI (Inter-Processor Interrupt) vectors
+ */
+#define IPI_VECTOR_RESCHEDULE   240     /* Reschedule on target CPU */
+#define IPI_VECTOR_TLB          241     /* TLB shootdown */
+#define IPI_VECTOR_HALT         242     /* Halt CPU */
+
+/*
  * Public API
  */
 
 /* Initialize the APIC subsystem (Local APIC + I/O APIC) */
 int apic_init(void);
+
+/* Initialize Local APIC for an AP (Application Processor) */
+void lapic_init_ap(void);
 
 /* Check if APIC is available and enabled */
 bool apic_is_enabled(void);
@@ -150,6 +160,32 @@ void ioapic_set_irq(uint8_t irq, uint8_t vector, uint8_t dest_apic_id,
 
 /* Disable the legacy 8259 PIC */
 void pic_disable(void);
+
+/*
+ * IPI (Inter-Processor Interrupt) functions
+ */
+
+/* Wait for ICR (Interrupt Command Register) to be ready */
+void lapic_wait_ipi(void);
+
+/* Send INIT IPI to a specific APIC */
+void lapic_send_init(uint8_t apic_id);
+
+/* Send INIT IPI de-assert (level-triggered) */
+void lapic_send_init_deassert(void);
+
+/* Send Startup IPI (SIPI) to a specific APIC
+ * vector: page number of trampoline code (e.g., 0x07 for 0x7000) */
+void lapic_send_sipi(uint8_t apic_id, uint8_t vector);
+
+/* Send IPI to a specific APIC with a given vector */
+void ipi_send(uint8_t apic_id, uint8_t vector);
+
+/* Send IPI to all CPUs except self */
+void ipi_send_all_others(uint8_t vector);
+
+/* Send IPI to self */
+void ipi_send_self(uint8_t vector);
 
 #ifdef DEBUG_TESTS
 /* Run APIC tests */

@@ -9,6 +9,7 @@
 #include "../sync/spinlock.h"
 #include "../debug/debug.h"
 #include "../arch/x86_64/cpu.h"
+#include "../smp/percpu.h"
 
 /* Default stack size: 16KB (4 pages) */
 #define DEFAULT_STACK_SIZE  (16 * 1024)
@@ -26,8 +27,18 @@ static tid_t next_tid = 1;
 /* Lock protecting thread_table and next_tid */
 static spinlock_t thread_lock = SPINLOCK_INIT;
 
-/* Current running thread (per-CPU, but we're single CPU for now) */
+/* Current running thread (global for pre-SMP, per-CPU after SMP init) */
 static thread_t * volatile current_thread = NULL;
+
+/*
+ * Get/set current thread - uses per-CPU data when SMP is initialized
+ */
+static inline thread_t **get_current_thread_ptr(void) {
+    if (smp_initialized()) {
+        return &percpu_get()->current_thread;
+    }
+    return (thread_t **)&current_thread;
+}
 
 /* Idle thread - always exists, runs when no other threads are ready */
 static thread_t *idle_thread = NULL;
@@ -116,7 +127,7 @@ void thread_init(void) {
     copy_thread_name(boot_thread, "boot");
 
     thread_table[0] = boot_thread;
-    current_thread = boot_thread;
+    *get_current_thread_ptr() = boot_thread;
 
     /* Initialize scheduler before creating threads */
     sched_init();
@@ -259,14 +270,14 @@ thread_t *thread_create(const char *name, thread_entry_t entry, void *arg) {
  * Get current thread
  */
 thread_t *thread_current(void) {
-    return current_thread;
+    return *get_current_thread_ptr();
 }
 
 /*
  * Set current thread (called by scheduler during context switch)
  */
 void thread_set_current(thread_t *thread) {
-    current_thread = thread;
+    *get_current_thread_ptr() = thread;
 }
 
 /*
@@ -281,7 +292,7 @@ void thread_yield(void) {
  * This function does not return
  */
 void thread_exit(void) {
-    thread_t *thread = current_thread;
+    thread_t *thread = thread_current();
 
     cli();  /* Disable interrupts during state change */
 
@@ -312,8 +323,9 @@ void thread_sleep_ms(uint32_t ms) {
 
     cli();  /* Disable interrupts during state change */
 
-    current_thread->state = THREAD_SLEEPING;
-    current_thread->wake_time = pit_get_ticks() + (ms * freq) / 1000;
+    thread_t *current = thread_current();
+    current->state = THREAD_SLEEPING;
+    current->wake_time = pit_get_ticks() + (ms * freq) / 1000;
 
     sched_reschedule();
     /* Returns after we wake up */
@@ -325,7 +337,7 @@ void thread_sleep_ms(uint32_t ms) {
 void thread_block(void) {
     cli();  /* Disable interrupts during state change */
 
-    current_thread->state = THREAD_BLOCKED;
+    thread_current()->state = THREAD_BLOCKED;
 
     sched_reschedule();
     /* Returns after we're unblocked */

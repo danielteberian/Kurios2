@@ -33,6 +33,9 @@
 #include "apic/apic.h"
 #include "drivers/hpet.h"
 #include "initrd/initrd.h"
+#include "smp/percpu.h"
+#include "smp/smp.h"
+#include "smp/tlb.h"
 
 #ifdef DEBUG_TESTS
 /* Test global constructor */
@@ -370,6 +373,19 @@ void kernel_main(BootInfo *boot_info) {
         DEBUG("HPET not available - using PIT for timing");
     }
 
+    /* Initialize per-CPU data for BSP (before SMP) */
+    percpu_init_bsp();
+
+    /* Initialize SMP - boot Application Processors */
+    smp_init();
+
+    /* Initialize TLB shootdown subsystem */
+    tlb_init();
+
+    /* Wait for all APs to come online */
+    uint32_t online_cpus = smp_wait_for_aps();
+    INFO("SMP: %u CPU(s) online", online_cpus);
+
 #ifdef DEBUG_TESTS
     /* Run ACPI tests */
     acpi_run_tests();
@@ -379,6 +395,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Run HPET tests */
     hpet_run_tests();
+
+    /* Run SMP tests */
+    smp_run_tests();
 
     /* Run address space tests (requires slab allocator) */
     as_run_tests();

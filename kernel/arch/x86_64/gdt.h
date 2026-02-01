@@ -164,4 +164,20 @@ tss_t* tss_get(void);
 extern void gdt_flush(gdt_pointer_t *gdt_ptr);
 extern void tss_flush(uint16_t selector);
 
+/*
+ * Per-CPU GDT/TSS initialization (for SMP)
+ */
+struct percpu_data;  /* Forward declaration */
+
+/*
+ * Initialize GDT and TSS for a specific CPU using its per-CPU data.
+ * This sets up the GDT entries in the percpu structure and loads them.
+ */
+void gdt_init_cpu(struct percpu_data *percpu);
+
+/*
+ * Load the IDT (shared across all CPUs but each CPU needs to run LIDT)
+ */
+void idt_load(void);
+
 #endif /* _ARCH_GDT_H */

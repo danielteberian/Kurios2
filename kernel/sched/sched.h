@@ -4,8 +4,14 @@
 
 #include "thread.h"
 
-/* Initialize scheduler */
+/* Forward declaration for SMP */
+struct percpu_data;
+
+/* Initialize scheduler (BSP only, during single-CPU boot) */
 void sched_init(void);
+
+/* Initialize scheduler for a specific CPU (SMP) */
+void sched_init_cpu(struct percpu_data *percpu);
 
 /* Start the scheduler (called once, doesn't return) */
 void sched_start(void);

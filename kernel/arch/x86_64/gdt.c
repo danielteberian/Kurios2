@@ -3,6 +3,7 @@
 #include "gdt.h"
 #include "../../debug/debug.h"
 #include "../../include/types.h"
+#include "../../smp/percpu.h"
 
 /* GDT entries - we use a union to handle both regular and TSS descriptors */
 static struct {
@@ -164,4 +165,71 @@ void tss_set_ist(int ist, uint64_t stack) {
  */
 tss_t* tss_get(void) {
     return &tss;
+}
+
+/*
+ * Initialize per-CPU GDT and TSS
+ * Called for each CPU (BSP and APs) during SMP initialization
+ */
+void gdt_init_cpu(struct percpu_data *percpu) {
+    if (!percpu) {
+        ERROR("gdt_init_cpu: NULL percpu data");
+        return;
+    }
+
+    /* Access per-CPU GDT through proper struct member access */
+    gdt_entry_t *cpu_gdt = percpu->gdt;
+    tss_descriptor_t *cpu_tss_desc = &percpu->tss_desc;
+    tss_t *cpu_tss = &percpu->tss;
+    gdt_pointer_t *cpu_gdt_ptr = &percpu->gdt_ptr;
+
+    /* Copy base GDT entries (null, kernel code, kernel data, user data, user code) */
+    cpu_gdt[0] = gdt.entries[0];  /* Null */
+    cpu_gdt[1] = gdt.entries[1];  /* Kernel code */
+    cpu_gdt[2] = gdt.entries[2];  /* Kernel data */
+    cpu_gdt[3] = gdt.entries[3];  /* User data */
+    cpu_gdt[4] = gdt.entries[4];  /* User code */
+
+    /* Initialize per-CPU TSS */
+    uint8_t *p = (uint8_t *)cpu_tss;
+    for (size_t i = 0; i < sizeof(tss_t); i++) {
+        p[i] = 0;
+    }
+
+    /* Set I/O permission bitmap offset */
+    cpu_tss->iopb_offset = sizeof(tss_t);
+
+    /* Set kernel stack (RSP0) - top of per-CPU kernel stack */
+    cpu_tss->rsp0 = (uint64_t)(percpu->kernel_stack + 16384);
+
+    /* Set IST entries to per-CPU IST stacks */
+    cpu_tss->ist1 = (uint64_t)(percpu->ist1_stack + 16384);
+    cpu_tss->ist2 = (uint64_t)(percpu->ist2_stack + 16384);
+    cpu_tss->ist3 = (uint64_t)(percpu->ist3_stack + 16384);
+
+    /* Set up TSS descriptor pointing to per-CPU TSS */
+    uint64_t tss_base = (uint64_t)cpu_tss;
+    uint32_t tss_limit = sizeof(tss_t) - 1;
+
+    cpu_tss_desc->limit_low = tss_limit & 0xFFFF;
+    cpu_tss_desc->base_low = tss_base & 0xFFFF;
+    cpu_tss_desc->base_mid = (tss_base >> 16) & 0xFF;
+    cpu_tss_desc->access = GDT_ACCESS_TSS;
+    cpu_tss_desc->granularity = (tss_limit >> 16) & 0x0F;
+    cpu_tss_desc->base_high = (tss_base >> 24) & 0xFF;
+    cpu_tss_desc->base_upper = (tss_base >> 32) & 0xFFFFFFFF;
+    cpu_tss_desc->reserved = 0;
+
+    /* Set up GDT pointer */
+    cpu_gdt_ptr->limit = sizeof(gdt_entry_t) * 5 + sizeof(tss_descriptor_t) - 1;
+    cpu_gdt_ptr->base = (uint64_t)cpu_gdt;
+
+    /* Load the per-CPU GDT */
+    gdt_flush(cpu_gdt_ptr);
+
+    /* Load the per-CPU TSS */
+    tss_flush(GDT_TSS);
+
+    DEBUG("GDT: CPU GDT/TSS initialized at 0x%llx, RSP0=0x%llx",
+          (uint64_t)cpu_gdt, cpu_tss->rsp0);
 }

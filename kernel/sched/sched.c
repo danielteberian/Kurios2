@@ -7,12 +7,13 @@
 #include "../drivers/pit.h"
 #include "../debug/debug.h"
 #include "../arch/x86_64/cpu.h"
+#include "../smp/percpu.h"
 
-/* Ready queue (doubly-linked list) */
+/* Ready queue (doubly-linked list) - used when SMP is not yet initialized */
 static thread_t *ready_queue_head = NULL;
 static thread_t *ready_queue_tail = NULL;
 
-/* Scheduler lock - protects the ready queue */
+/* Scheduler lock - protects the ready queue (pre-SMP) */
 static spinlock_t sched_lock = SPINLOCK_INIT;
 
 /* Scheduler running flag */
@@ -21,7 +22,7 @@ static volatile bool scheduler_running = false;
 /* Time slice in ticks (10 ticks = 100ms at 100Hz) */
 #define TIME_SLICE_TICKS 10
 
-/* Current time slice remaining for the running thread */
+/* Current time slice remaining for the running thread (pre-SMP) */
 static volatile uint32_t current_slice = 0;
 
 /* External from thread.c */
@@ -29,7 +30,38 @@ extern void thread_set_current(thread_t *thread);
 extern thread_t *thread_get_idle(void);
 
 /*
- * Initialize scheduler
+ * Get scheduler state (per-CPU if SMP, otherwise global)
+ */
+static inline thread_t **get_ready_head(void) {
+    if (smp_initialized()) {
+        return &percpu_get()->ready_queue_head;
+    }
+    return &ready_queue_head;
+}
+
+static inline thread_t **get_ready_tail(void) {
+    if (smp_initialized()) {
+        return &percpu_get()->ready_queue_tail;
+    }
+    return &ready_queue_tail;
+}
+
+static inline spinlock_t *get_sched_lock(void) {
+    if (smp_initialized()) {
+        return &percpu_get()->sched_lock;
+    }
+    return &sched_lock;
+}
+
+static inline uint32_t *get_current_slice(void) {
+    if (smp_initialized()) {
+        return &percpu_get()->current_slice;
+    }
+    return (uint32_t *)&current_slice;
+}
+
+/*
+ * Initialize scheduler (global state for pre-SMP boot)
  */
 void sched_init(void) {
     spin_init(&sched_lock);
@@ -40,19 +72,42 @@ void sched_init(void) {
 }
 
 /*
+ * Initialize scheduler for a specific CPU (SMP)
+ */
+void sched_init_cpu(struct percpu_data *percpu) {
+    if (!percpu) return;
+
+    spin_init(&percpu->sched_lock);
+    percpu->ready_queue_head = NULL;
+    percpu->ready_queue_tail = NULL;
+    percpu->current_slice = TIME_SLICE_TICKS;
+    percpu->current_thread = NULL;
+    percpu->idle_thread = NULL;
+
+    /* Create per-CPU idle thread */
+    /* Note: For now, APs share the global idle thread approach
+     * A proper implementation would create per-CPU idle threads */
+
+    DEBUG("Scheduler initialized for CPU %u", percpu->cpu_id);
+}
+
+/*
  * Add thread to ready queue (internal, must hold sched_lock)
  */
 static void queue_add_locked(thread_t *thread) {
+    thread_t **head = get_ready_head();
+    thread_t **tail = get_ready_tail();
+
     thread->state = THREAD_READY;
     thread->next = NULL;
-    thread->prev = ready_queue_tail;
+    thread->prev = *tail;
 
-    if (ready_queue_tail == NULL) {
-        ready_queue_head = thread;
-        ready_queue_tail = thread;
+    if (*tail == NULL) {
+        *head = thread;
+        *tail = thread;
     } else {
-        ready_queue_tail->next = thread;
-        ready_queue_tail = thread;
+        (*tail)->next = thread;
+        *tail = thread;
     }
 }
 
@@ -60,7 +115,8 @@ static void queue_add_locked(thread_t *thread) {
  * Check if thread is in the ready queue
  */
 static bool queue_contains_locked(thread_t *thread) {
-    for (thread_t *t = ready_queue_head; t; t = t->next) {
+    thread_t **head = get_ready_head();
+    for (thread_t *t = *head; t; t = t->next) {
         if (t == thread) return true;
     }
     return false;
@@ -71,6 +127,9 @@ static bool queue_contains_locked(thread_t *thread) {
  * Safe to call on threads not in queue (does nothing)
  */
 static void queue_remove_locked(thread_t *thread) {
+    thread_t **head = get_ready_head();
+    thread_t **tail = get_ready_tail();
+
     /* Don't corrupt queue if thread isn't in it */
     if (!queue_contains_locked(thread)) {
         return;
@@ -79,13 +138,13 @@ static void queue_remove_locked(thread_t *thread) {
     if (thread->prev) {
         thread->prev->next = thread->next;
     } else {
-        ready_queue_head = thread->next;
+        *head = thread->next;
     }
 
     if (thread->next) {
         thread->next->prev = thread->prev;
     } else {
-        ready_queue_tail = thread->prev;
+        *tail = thread->prev;
     }
 
     thread->next = NULL;
@@ -100,10 +159,11 @@ void sched_ready(thread_t *thread) {
         return;
     }
 
-    uint64_t flags = spin_lock_irqsave(&sched_lock);
+    spinlock_t *lock = get_sched_lock();
+    uint64_t flags = spin_lock_irqsave(lock);
     queue_add_locked(thread);
     INFO("Added to ready queue: %s (TID %u)", thread->name, thread->tid);
-    spin_unlock_irqrestore(&sched_lock, flags);
+    spin_unlock_irqrestore(lock, flags);
 }
 
 /*
@@ -114,9 +174,10 @@ void sched_remove(thread_t *thread) {
         return;
     }
 
-    uint64_t flags = spin_lock_irqsave(&sched_lock);
+    spinlock_t *lock = get_sched_lock();
+    uint64_t flags = spin_lock_irqsave(lock);
     queue_remove_locked(thread);
-    spin_unlock_irqrestore(&sched_lock, flags);
+    spin_unlock_irqrestore(lock, flags);
 }
 
 /*
@@ -124,7 +185,8 @@ void sched_remove(thread_t *thread) {
  * Must be called with sched_lock held
  */
 static void wake_sleeping_threads_locked(uint64_t now) {
-    for (thread_t *t = ready_queue_head; t; t = t->next) {
+    thread_t **head = get_ready_head();
+    for (thread_t *t = *head; t; t = t->next) {
         if (t->state == THREAD_SLEEPING && t->wake_time <= now) {
             t->state = THREAD_READY;
         }
@@ -136,11 +198,13 @@ static void wake_sleeping_threads_locked(uint64_t now) {
  * Must be called with sched_lock held
  */
 static thread_t *pick_next_locked(void) {
+    thread_t **head = get_ready_head();
+
     /* Wake sleeping threads first */
     wake_sleeping_threads_locked(pit_get_ticks());
 
     /* Find first ready thread */
-    thread_t *next = ready_queue_head;
+    thread_t *next = *head;
     while (next && next->state != THREAD_READY) {
         next = next->next;
     }
@@ -167,19 +231,22 @@ void sched_tick(void) {
         current->cpu_time++;
     }
 
+    uint32_t *slice = get_current_slice();
+    spinlock_t *lock = get_sched_lock();
+
     /* Decrement time slice */
-    if (current_slice > 0) {
-        current_slice--;
+    if (*slice > 0) {
+        (*slice)--;
     }
 
     /* Wake sleeping threads */
-    uint64_t flags = spin_lock_irqsave(&sched_lock);
+    uint64_t flags = spin_lock_irqsave(lock);
     wake_sleeping_threads_locked(pit_get_ticks());
-    spin_unlock_irqrestore(&sched_lock, flags);
+    spin_unlock_irqrestore(lock, flags);
 
     /* Preempt if time slice expired and thread is still running */
-    if (current_slice == 0 && current && current->state == THREAD_RUNNING) {
-        current_slice = TIME_SLICE_TICKS;
+    if (*slice == 0 && current && current->state == THREAD_RUNNING) {
+        *slice = TIME_SLICE_TICKS;
         /* Call reschedule - will re-acquire lock internally */
         sched_reschedule();
     }
@@ -198,14 +265,16 @@ void sched_tick(void) {
  * - We don't want to hold a lock across a switch
  */
 void sched_reschedule(void) {
-    uint64_t flags = spin_lock_irqsave(&sched_lock);
+    spinlock_t *lock = get_sched_lock();
+    uint32_t *slice = get_current_slice();
+    uint64_t flags = spin_lock_irqsave(lock);
 
     thread_t *current = thread_current();
     thread_t *next = pick_next_locked();
 
     /* No thread to run - shouldn't happen if idle thread exists */
     if (!next) {
-        spin_unlock_irqrestore(&sched_lock, flags);
+        spin_unlock_irqrestore(lock, flags);
         return;
     }
 
@@ -214,7 +283,7 @@ void sched_reschedule(void) {
         if (current && current->state != THREAD_RUNNING) {
             current->state = THREAD_RUNNING;
         }
-        spin_unlock_irqrestore(&sched_lock, flags);
+        spin_unlock_irqrestore(lock, flags);
         return;
     }
 
@@ -243,10 +312,10 @@ void sched_reschedule(void) {
     queue_remove_locked(next);
     next->state = THREAD_RUNNING;
     thread_set_current(next);
-    current_slice = TIME_SLICE_TICKS;
+    *slice = TIME_SLICE_TICKS;
 
     /* Release lock before context switch */
-    spin_unlock_irqrestore(&sched_lock, flags);
+    spin_unlock_irqrestore(lock, flags);
 
     /* Perform context switch */
     if (current) {
@@ -263,7 +332,8 @@ void sched_reschedule(void) {
 void sched_start(void) {
     INFO("Starting scheduler...");
     scheduler_running = true;
-    current_slice = TIME_SLICE_TICKS;
+    uint32_t *slice = get_current_slice();
+    *slice = TIME_SLICE_TICKS;
     /* Enable interrupts to allow timer ticks */
     sti();
 }
