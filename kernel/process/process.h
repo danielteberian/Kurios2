@@ -57,6 +57,8 @@ typedef struct process {
 
     /* Process relationships */
     pid_t parent_pid;               /* Parent process ID */
+    pid_t pgrp;                     /* Process group ID */
+    pid_t session_id;               /* Session ID */
     int exit_code;                  /* Exit status (valid when ZOMBIE) */
 
     /* Main thread (for single-threaded processes) */
@@ -75,6 +77,12 @@ typedef struct process {
     /* User-space entry (for new processes) */
     uint64_t entry_point;           /* User-space entry address */
     uint64_t user_stack;            /* User-space stack pointer */
+
+    /* Memory management */
+    uint64_t brk;                   /* Program break (heap end) */
+
+    /* Working directory */
+    char cwd[256];                  /* Current working directory */
 } process_t;
 
 /*

@@ -6,6 +6,23 @@
 #include "../lib/string.h"
 #include "../debug/debug.h"
 
+#ifdef DEBUG_TESTS
+/*
+ * When testing from kernel mode, we need to allow kernel addresses
+ * to pass access_ok checks since we can't easily allocate user-space
+ * memory for testing purposes.
+ */
+static bool kernel_testing_mode = false;
+
+void uaccess_set_kernel_testing(bool enable) {
+    kernel_testing_mode = enable;
+}
+
+bool uaccess_get_kernel_testing(void) {
+    return kernel_testing_mode;
+}
+#endif
+
 /*
  * Check if a user-space address range is valid
  *
@@ -26,6 +43,20 @@ bool access_ok(const void *addr, size_t size) {
     if (__builtin_add_overflow(start, size - 1, &end)) {
         return false;
     }
+
+#ifdef DEBUG_TESTS
+    /*
+     * In kernel testing mode, allow kernel addresses (higher half).
+     * This lets us test syscalls from kernel code without needing
+     * to allocate user-space memory.
+     */
+    if (kernel_testing_mode) {
+        /* Allow kernel addresses (0xFFFF800000000000 and above) */
+        if (start >= 0xFFFF800000000000UL) {
+            return true;
+        }
+    }
+#endif
 
     /* Check that entire range is in user space */
     if (start > USER_ADDR_MAX || end > USER_ADDR_MAX) {

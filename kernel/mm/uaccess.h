@@ -68,4 +68,14 @@ ssize_t strncpy_from_user(char *dst, const char *src, size_t max);
  */
 ssize_t strnlen_user(const char *str, size_t max);
 
+#ifdef DEBUG_TESTS
+/*
+ * Enable/disable kernel testing mode for access_ok
+ * When enabled, kernel addresses pass access_ok checks,
+ * allowing syscall testing from kernel code.
+ */
+void uaccess_set_kernel_testing(bool enable);
+bool uaccess_get_kernel_testing(void);
+#endif
+
 #endif /* _KERNEL_MM_UACCESS_H */

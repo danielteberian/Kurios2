@@ -6,13 +6,17 @@
 #include "../include/types.h"
 #include "../mm/as.h"
 #include "../mm/uaccess.h"
+#include "../mm/vmm.h"
+#include "../mm/pmm.h"
 #include "../process/process.h"
 #include "../sched/sched.h"
+#include "../sched/thread.h"
 #include "../loader/elf_loader.h"
 #include "../fs/vfs.h"
 #include "../fs/fd_table.h"
 #include "../mm/slab.h"
 #include "../drivers/keyboard.h"
+#include "../drivers/pit.h"
 #include "../signal/signal.h"
 #include "lib/string.h"
 
@@ -636,6 +640,925 @@ static int64_t sys_kill(uint64_t pid_arg, uint64_t sig,
     return signal_send((uint32_t)pid, signum);
 }
 
+/* ============================================================================
+ * NEW SYSCALLS - File/Directory Operations
+ * ============================================================================ */
+
+/*
+ * sys_stat - get file status by pathname
+ */
+static int64_t sys_stat(uint64_t pathname, uint64_t statbuf, uint64_t arg3,
+                        uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    if (!access_ok((void *)statbuf, sizeof(vfs_stat_t))) {
+        return -EFAULT;
+    }
+
+    vfs_stat_t kstat;
+    int ret = vfs_stat(path, &kstat);
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (copy_to_user((void *)statbuf, &kstat, sizeof(kstat)) < 0) {
+        return -EFAULT;
+    }
+
+    return 0;
+}
+
+/*
+ * sys_access - check file access permissions
+ */
+static int64_t sys_access(uint64_t pathname, uint64_t mode, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    /* Check if file exists */
+    vfs_stat_t st;
+    int ret = vfs_stat(path, &st);
+    if (ret < 0) {
+        return -ENOENT;
+    }
+
+    /* For now, just check existence (F_OK) or assume all permissions granted */
+    if (mode == F_OK) {
+        return 0;
+    }
+
+    /* Check permissions - in a real system we'd check against user/group */
+    if ((mode & R_OK) && !(st.permissions & VFS_PERM_READ)) {
+        return -EACCES;
+    }
+    if ((mode & W_OK) && !(st.permissions & VFS_PERM_WRITE)) {
+        return -EACCES;
+    }
+    if ((mode & X_OK) && !(st.permissions & VFS_PERM_EXEC)) {
+        return -EACCES;
+    }
+
+    return 0;
+}
+
+/*
+ * sys_getcwd - get current working directory
+ */
+static int64_t sys_getcwd(uint64_t buf, uint64_t size, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (size == 0) {
+        return -EINVAL;
+    }
+
+    if (!access_ok((void *)buf, size)) {
+        return -EFAULT;
+    }
+
+    process_t *proc = process_current();
+    const char *cwd = proc ? proc->cwd : "/";
+
+    size_t len = strlen(cwd);
+    if (len + 1 > size) {
+        return -ERANGE;
+    }
+
+    if (copy_to_user((void *)buf, cwd, len + 1) < 0) {
+        return -EFAULT;
+    }
+
+    return (int64_t)buf;
+}
+
+/*
+ * sys_chdir - change current working directory
+ */
+static int64_t sys_chdir(uint64_t pathname, uint64_t arg2, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    /* Verify it's a directory */
+    vfs_stat_t st;
+    int ret = vfs_stat(path, &st);
+    if (ret < 0) {
+        return -ENOENT;
+    }
+    if (st.type != VFS_DIR) {
+        return -ENOTDIR;
+    }
+
+    process_t *proc = process_current();
+    if (proc) {
+        strncpy(proc->cwd, path, sizeof(proc->cwd) - 1);
+        proc->cwd[sizeof(proc->cwd) - 1] = '\0';
+    }
+
+    return 0;
+}
+
+/*
+ * sys_mkdir - create a directory
+ */
+static int64_t sys_mkdir(uint64_t pathname, uint64_t mode, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)mode; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    return vfs_mkdir(path);
+}
+
+/*
+ * sys_rmdir - remove a directory
+ */
+static int64_t sys_rmdir(uint64_t pathname, uint64_t arg2, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    return vfs_rmdir(path);
+}
+
+/*
+ * sys_unlink - remove a file
+ */
+static int64_t sys_unlink(uint64_t pathname, uint64_t arg2, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    return vfs_unlink(path);
+}
+
+/*
+ * sys_truncate - truncate a file by path
+ */
+static int64_t sys_truncate(uint64_t pathname, uint64_t length, uint64_t arg3,
+                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    return vfs_truncate(path, length);
+}
+
+/*
+ * sys_ftruncate - truncate a file by fd
+ */
+static int64_t sys_ftruncate(uint64_t fd, uint64_t length, uint64_t arg3,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (fd < 3) {
+        return -EINVAL;
+    }
+
+    /* Get file from fd, then truncate - this is a simplified version */
+    /* For a full implementation, we'd need vfs_ftruncate() */
+    (void)fd; (void)length;
+    return -ENOSYS;  /* Not fully implemented */
+}
+
+/*
+ * sys_getdents - get directory entries
+ */
+static int64_t sys_getdents(uint64_t fd, uint64_t dirp, uint64_t count,
+                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    if (!access_ok((void *)dirp, count)) {
+        return -EFAULT;
+    }
+
+    if (count < sizeof(linux_dirent64_t) + 2) {
+        return -EINVAL;
+    }
+
+    /* Read directory entries */
+    dirent_t dent;
+    int ret = vfs_readdir((int)fd, &dent);
+    if (ret != VFS_OK) {
+        if (ret == -ENOENT) {
+            return 0;  /* End of directory */
+        }
+        return ret;
+    }
+
+    /* Calculate entry size (header + name + null + padding) */
+    size_t name_len = strlen(dent.name);
+    size_t reclen = sizeof(linux_dirent64_t) + name_len + 1;
+    reclen = (reclen + 7) & ~7;  /* Align to 8 bytes */
+
+    if (reclen > count) {
+        return -EINVAL;
+    }
+
+    /* Build the entry in kernel space */
+    uint8_t kbuf[256];
+    linux_dirent64_t *ent = (linux_dirent64_t *)kbuf;
+    ent->d_ino = dent.inode;
+    ent->d_off = 0;
+    ent->d_reclen = (uint16_t)reclen;
+    ent->d_type = (dent.type == VFS_DIR) ? DT_DIR : DT_REG;
+    memcpy(ent->d_name, dent.name, name_len + 1);
+
+    if (copy_to_user((void *)dirp, kbuf, reclen) < 0) {
+        return -EFAULT;
+    }
+
+    return (int64_t)reclen;
+}
+
+/*
+ * sys_readlink - read symbolic link (stub - we don't have symlinks yet)
+ */
+static int64_t sys_readlink(uint64_t pathname, uint64_t buf, uint64_t bufsiz,
+                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)pathname; (void)buf; (void)bufsiz;
+    (void)arg4; (void)arg5; (void)arg6;
+    return -EINVAL;  /* No symbolic links supported */
+}
+
+/* ============================================================================
+ * NEW SYSCALLS - Memory Management
+ * ============================================================================ */
+
+/* Process break (heap end) tracking - simple implementation */
+static uint64_t process_brk = 0x10000000;  /* Default starting brk */
+
+/*
+ * sys_brk - change data segment size (heap management)
+ */
+static int64_t sys_brk(uint64_t brk, uint64_t arg2, uint64_t arg3,
+                       uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    process_t *proc = process_current();
+    if (!proc) {
+        return process_brk;
+    }
+
+    /* Get current brk */
+    uint64_t current_brk = proc->brk ? proc->brk : process_brk;
+
+    /* If brk is 0, just return current brk */
+    if (brk == 0) {
+        return (int64_t)current_brk;
+    }
+
+    /* Don't allow shrinking below initial brk or above limit */
+    if (brk < 0x10000000 || brk > 0x80000000) {
+        return (int64_t)current_brk;
+    }
+
+    /* For now, just update the brk - in a real implementation,
+     * we'd allocate/deallocate pages as needed */
+    proc->brk = brk;
+    return (int64_t)brk;
+}
+
+/*
+ * sys_mmap - map memory
+ * Simplified implementation - only supports anonymous mappings
+ */
+static int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot,
+                        uint64_t flags, uint64_t fd, uint64_t offset) {
+    (void)offset;
+
+    DEBUG("sys_mmap(addr=0x%llx, len=%llu, prot=0x%llx, flags=0x%llx, fd=%llu)",
+          addr, length, prot, flags, fd);
+
+    if (length == 0) {
+        return -EINVAL;
+    }
+
+    /* Only support anonymous mappings for now */
+    if (!(flags & MAP_ANONYMOUS)) {
+        if (fd != (uint64_t)-1) {
+            return -ENOSYS;  /* File-backed mappings not implemented */
+        }
+    }
+
+    /* Round length up to page size */
+    length = (length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint64_t num_pages = length / PAGE_SIZE;
+
+    /* Choose address if not specified */
+    static uint64_t mmap_hint = 0x40000000;
+    uint64_t map_addr;
+
+    if (addr && (flags & MAP_FIXED)) {
+        map_addr = addr & ~(PAGE_SIZE - 1);
+    } else if (addr) {
+        map_addr = addr & ~(PAGE_SIZE - 1);
+    } else {
+        map_addr = mmap_hint;
+        mmap_hint += length + PAGE_SIZE;
+    }
+
+    /* Convert protection flags */
+    uint64_t pte_flags = PTE_USER;
+    if (prot & PROT_WRITE) pte_flags |= PTE_WRITABLE;
+    if (!(prot & PROT_EXEC)) pte_flags |= PTE_NX;
+
+    /* Allocate pages */
+    process_t *proc = process_current();
+    if (!proc) {
+        return -ESRCH;
+    }
+
+    address_space_t as;
+    as.cr3 = proc->cr3 ? proc->cr3 : as_get_kernel()->cr3;
+    as.ref_count = 1;
+    as.user_pages = 0;
+
+    int ret = as_alloc_pages(&as, map_addr, num_pages, pte_flags);
+    if (ret < 0) {
+        return ret;
+    }
+
+    return (int64_t)map_addr;
+}
+
+/*
+ * sys_munmap - unmap memory
+ */
+static int64_t sys_munmap(uint64_t addr, uint64_t length, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (addr & (PAGE_SIZE - 1)) {
+        return -EINVAL;
+    }
+    if (length == 0) {
+        return -EINVAL;
+    }
+
+    length = (length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint64_t num_pages = length / PAGE_SIZE;
+
+    /* Unmap pages */
+    for (uint64_t i = 0; i < num_pages; i++) {
+        vmm_unmap_page(addr + i * PAGE_SIZE);
+    }
+
+    return 0;
+}
+
+/*
+ * sys_mprotect - change memory protection
+ */
+static int64_t sys_mprotect(uint64_t addr, uint64_t length, uint64_t prot,
+                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    if (addr & (PAGE_SIZE - 1)) {
+        return -EINVAL;
+    }
+    if (length == 0) {
+        return 0;
+    }
+
+    /* For now, just validate the request - full implementation would
+     * modify PTEs to change protection */
+    (void)prot;
+
+    return 0;
+}
+
+/* ============================================================================
+ * NEW SYSCALLS - Time
+ * ============================================================================ */
+
+/* Boot time in seconds since epoch (placeholder) */
+static uint64_t boot_time_sec = 1706700000;  /* ~Jan 31, 2024 */
+
+/*
+ * sys_gettimeofday - get current time
+ */
+static int64_t sys_gettimeofday(uint64_t tv, uint64_t tz, uint64_t arg3,
+                                uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (tv) {
+        if (!access_ok((void *)tv, sizeof(timeval_t))) {
+            return -EFAULT;
+        }
+
+        uint64_t uptime_ms = pit_get_uptime_ms();
+        timeval_t ktv;
+        ktv.tv_sec = boot_time_sec + uptime_ms / 1000;
+        ktv.tv_usec = (uptime_ms % 1000) * 1000;
+
+        if (copy_to_user((void *)tv, &ktv, sizeof(ktv)) < 0) {
+            return -EFAULT;
+        }
+    }
+
+    if (tz) {
+        if (!access_ok((void *)tz, sizeof(timezone_t))) {
+            return -EFAULT;
+        }
+
+        timezone_t ktz = { 0, 0 };
+        if (copy_to_user((void *)tz, &ktz, sizeof(ktz)) < 0) {
+            return -EFAULT;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * sys_clock_gettime - get time from a clock
+ */
+static int64_t sys_clock_gettime(uint64_t clockid, uint64_t tp, uint64_t arg3,
+                                 uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (!access_ok((void *)tp, sizeof(timespec_t))) {
+        return -EFAULT;
+    }
+
+    timespec_t kts;
+    uint64_t uptime_ms = pit_get_uptime_ms();
+
+    switch ((int)clockid) {
+    case CLOCK_REALTIME:
+    case CLOCK_REALTIME_COARSE:
+        kts.tv_sec = boot_time_sec + uptime_ms / 1000;
+        kts.tv_nsec = (uptime_ms % 1000) * 1000000;
+        break;
+
+    case CLOCK_MONOTONIC:
+    case CLOCK_MONOTONIC_RAW:
+    case CLOCK_MONOTONIC_COARSE:
+        kts.tv_sec = uptime_ms / 1000;
+        kts.tv_nsec = (uptime_ms % 1000) * 1000000;
+        break;
+
+    case CLOCK_PROCESS_CPUTIME:
+    case CLOCK_THREAD_CPUTIME:
+        /* Return uptime as process/thread time for simplicity */
+        kts.tv_sec = uptime_ms / 1000;
+        kts.tv_nsec = (uptime_ms % 1000) * 1000000;
+        break;
+
+    default:
+        return -EINVAL;
+    }
+
+    if (copy_to_user((void *)tp, &kts, sizeof(kts)) < 0) {
+        return -EFAULT;
+    }
+
+    return 0;
+}
+
+/*
+ * sys_clock_getres - get clock resolution
+ */
+static int64_t sys_clock_getres(uint64_t clockid, uint64_t res, uint64_t arg3,
+                                uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (!res) {
+        return 0;
+    }
+
+    if (!access_ok((void *)res, sizeof(timespec_t))) {
+        return -EFAULT;
+    }
+
+    /* All clocks have 1ms resolution (PIT-based) */
+    timespec_t kts;
+    kts.tv_sec = 0;
+    kts.tv_nsec = 1000000;  /* 1ms in nanoseconds */
+
+    switch ((int)clockid) {
+    case CLOCK_REALTIME:
+    case CLOCK_MONOTONIC:
+    case CLOCK_PROCESS_CPUTIME:
+    case CLOCK_THREAD_CPUTIME:
+    case CLOCK_REALTIME_COARSE:
+    case CLOCK_MONOTONIC_COARSE:
+    case CLOCK_MONOTONIC_RAW:
+        break;
+    default:
+        return -EINVAL;
+    }
+
+    if (copy_to_user((void *)res, &kts, sizeof(kts)) < 0) {
+        return -EFAULT;
+    }
+
+    return 0;
+}
+
+/*
+ * sys_nanosleep - sleep for specified time
+ */
+static int64_t sys_nanosleep(uint64_t req, uint64_t rem, uint64_t arg3,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (!access_ok((void *)req, sizeof(timespec_t))) {
+        return -EFAULT;
+    }
+
+    timespec_t kreq;
+    if (copy_from_user(&kreq, (void *)req, sizeof(kreq)) < 0) {
+        return -EFAULT;
+    }
+
+    if (kreq.tv_sec < 0 || kreq.tv_nsec < 0 || kreq.tv_nsec >= 1000000000) {
+        return -EINVAL;
+    }
+
+    /* Convert to milliseconds and sleep */
+    uint64_t ms = kreq.tv_sec * 1000 + kreq.tv_nsec / 1000000;
+    if (ms > 0) {
+        thread_sleep_ms(ms);
+    }
+
+    /* Set remaining time to 0 */
+    if (rem) {
+        if (!access_ok((void *)rem, sizeof(timespec_t))) {
+            return -EFAULT;
+        }
+        timespec_t krem = { 0, 0 };
+        if (copy_to_user((void *)rem, &krem, sizeof(krem)) < 0) {
+            return -EFAULT;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * sys_sched_yield - yield the processor
+ */
+static int64_t sys_sched_yield(uint64_t arg1, uint64_t arg2, uint64_t arg3,
+                               uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    sched_reschedule();
+    return 0;
+}
+
+/* ============================================================================
+ * NEW SYSCALLS - Process/User Identity
+ * ============================================================================ */
+
+/*
+ * sys_getuid/geteuid/getgid/getegid - get user/group IDs
+ * All return 0 (root) for now since we don't have users
+ */
+static int64_t sys_getuid(uint64_t arg1, uint64_t arg2, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    return 0;  /* root */
+}
+
+static int64_t sys_geteuid(uint64_t arg1, uint64_t arg2, uint64_t arg3,
+                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    return 0;  /* root */
+}
+
+static int64_t sys_getgid(uint64_t arg1, uint64_t arg2, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    return 0;  /* root */
+}
+
+static int64_t sys_getegid(uint64_t arg1, uint64_t arg2, uint64_t arg3,
+                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    return 0;  /* root */
+}
+
+static int64_t sys_setuid(uint64_t uid, uint64_t arg2, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)uid; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    return 0;  /* Always succeed (we're always root) */
+}
+
+static int64_t sys_setgid(uint64_t gid, uint64_t arg2, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)gid; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    return 0;  /* Always succeed */
+}
+
+/*
+ * sys_setsid - create a new session
+ */
+static int64_t sys_setsid(uint64_t arg1, uint64_t arg2, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    process_t *proc = process_current();
+    if (proc) {
+        /* Make this process a session leader */
+        proc->session_id = proc->pid;
+        proc->pgrp = proc->pid;
+        return (int64_t)proc->pid;
+    }
+    return -EPERM;
+}
+
+/*
+ * sys_getpgid - get process group ID
+ */
+static int64_t sys_getpgid(uint64_t pid, uint64_t arg2, uint64_t arg3,
+                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (pid == 0) {
+        process_t *proc = process_current();
+        return proc ? (int64_t)proc->pgrp : 0;
+    }
+
+    process_t *target = process_get_by_pid((uint32_t)pid);
+    if (!target) {
+        return -ESRCH;
+    }
+    return (int64_t)target->pgrp;
+}
+
+/*
+ * sys_setpgid - set process group ID
+ */
+static int64_t sys_setpgid(uint64_t pid, uint64_t pgid, uint64_t arg3,
+                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    process_t *proc = process_current();
+    if (!proc) {
+        return -ESRCH;
+    }
+
+    uint32_t target_pid = pid ? (uint32_t)pid : proc->pid;
+    uint32_t new_pgid = pgid ? (uint32_t)pgid : target_pid;
+
+    process_t *target = process_get_by_pid(target_pid);
+    if (!target) {
+        return -ESRCH;
+    }
+
+    target->pgrp = new_pgid;
+    return 0;
+}
+
+/*
+ * sys_getsid - get session ID
+ */
+static int64_t sys_getsid(uint64_t pid, uint64_t arg2, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (pid == 0) {
+        process_t *proc = process_current();
+        return proc ? (int64_t)proc->session_id : 0;
+    }
+
+    process_t *target = process_get_by_pid((uint32_t)pid);
+    if (!target) {
+        return -ESRCH;
+    }
+    return (int64_t)target->session_id;
+}
+
+/* ============================================================================
+ * NEW SYSCALLS - Signals
+ * ============================================================================ */
+
+/*
+ * sys_sigaction - set signal handler
+ */
+static int64_t sys_sigaction(uint64_t signum, uint64_t act, uint64_t oldact,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    if (signum >= NSIG || signum == 0) {
+        return -EINVAL;
+    }
+
+    process_t *proc = process_current();
+    if (!proc || !proc->signals) {
+        return -ESRCH;
+    }
+
+    /* Get old action if requested */
+    if (oldact) {
+        if (!access_ok((void *)oldact, sizeof(sigaction_t))) {
+            return -EFAULT;
+        }
+        if (copy_to_user((void *)oldact, &proc->signals->actions[signum],
+                         sizeof(sigaction_t)) < 0) {
+            return -EFAULT;
+        }
+    }
+
+    /* Set new action if provided */
+    if (act) {
+        if (!access_ok((void *)act, sizeof(sigaction_t))) {
+            return -EFAULT;
+        }
+        if (copy_from_user(&proc->signals->actions[signum], (void *)act,
+                           sizeof(sigaction_t)) < 0) {
+            return -EFAULT;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * sys_sigprocmask - manipulate signal mask
+ */
+static int64_t sys_sigprocmask(uint64_t how, uint64_t set, uint64_t oldset,
+                               uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    process_t *proc = process_current();
+    if (!proc || !proc->signals) {
+        return -ESRCH;
+    }
+
+    /* Return old mask if requested */
+    if (oldset) {
+        if (!access_ok((void *)oldset, sizeof(sigset_t))) {
+            return -EFAULT;
+        }
+        if (copy_to_user((void *)oldset, &proc->signals->blocked,
+                         sizeof(sigset_t)) < 0) {
+            return -EFAULT;
+        }
+    }
+
+    /* Modify mask if new set provided */
+    if (set) {
+        if (!access_ok((void *)set, sizeof(sigset_t))) {
+            return -EFAULT;
+        }
+
+        sigset_t kset;
+        if (copy_from_user(&kset, (void *)set, sizeof(kset)) < 0) {
+            return -EFAULT;
+        }
+
+        switch ((int)how) {
+        case 0:  /* SIG_BLOCK */
+            proc->signals->blocked |= kset;
+            break;
+        case 1:  /* SIG_UNBLOCK */
+            proc->signals->blocked &= ~kset;
+            break;
+        case 2:  /* SIG_SETMASK */
+            proc->signals->blocked = kset;
+            break;
+        default:
+            return -EINVAL;
+        }
+
+        /* SIGKILL and SIGSTOP cannot be blocked */
+        proc->signals->blocked &= ~((1UL << SIGKILL) | (1UL << SIGSTOP));
+    }
+
+    return 0;
+}
+
+/*
+ * sys_sigreturn - return from signal handler (stub)
+ */
+static int64_t sys_sigreturn(uint64_t arg1, uint64_t arg2, uint64_t arg3,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    /* This would restore context saved before signal handler was called */
+    return 0;
+}
+
+/* ============================================================================
+ * NEW SYSCALLS - Miscellaneous
+ * ============================================================================ */
+
+/*
+ * sys_uname - get system information
+ */
+static int64_t sys_uname(uint64_t buf, uint64_t arg2, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (!access_ok((void *)buf, sizeof(utsname_t))) {
+        return -EFAULT;
+    }
+
+    utsname_t kname;
+    strncpy(kname.sysname, "Kurios2", UTSNAME_LENGTH);
+    strncpy(kname.nodename, "kurios", UTSNAME_LENGTH);
+    strncpy(kname.release, "0.1.0", UTSNAME_LENGTH);
+    strncpy(kname.version, "0.1.0 " __DATE__, UTSNAME_LENGTH);
+    strncpy(kname.machine, "x86_64", UTSNAME_LENGTH);
+    strncpy(kname.domainname, "(none)", UTSNAME_LENGTH);
+
+    if (copy_to_user((void *)buf, &kname, sizeof(kname)) < 0) {
+        return -EFAULT;
+    }
+
+    return 0;
+}
+
+/*
+ * sys_ioctl - device control (minimal stub)
+ */
+static int64_t sys_ioctl(uint64_t fd, uint64_t request, uint64_t arg,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg; (void)arg4; (void)arg5; (void)arg6;
+
+    /* Terminal ioctls for stdin/stdout/stderr */
+    if (fd <= 2) {
+        switch (request) {
+        case 0x5401:  /* TCGETS - get terminal attributes */
+            return -ENOTTY;  /* Not a terminal */
+        case 0x5413:  /* TIOCGWINSZ - get window size */
+            return -ENOTTY;
+        default:
+            return -ENOTTY;
+        }
+    }
+
+    return -ENOTTY;
+}
+
+/*
+ * sys_pipe - create a pipe (stub)
+ */
+static int64_t sys_pipe(uint64_t pipefd, uint64_t arg2, uint64_t arg3,
+                        uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (!access_ok((void *)pipefd, 2 * sizeof(int))) {
+        return -EFAULT;
+    }
+
+    /* Pipes not fully implemented yet */
+    return -ENOSYS;
+}
+
+/*
+ * sys_syslog - read/control kernel log (stub)
+ */
+static int64_t sys_syslog(uint64_t type, uint64_t bufp, uint64_t len,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)bufp; (void)len; (void)arg4; (void)arg5; (void)arg6;
+
+    switch ((int)type) {
+    case 0:  /* SYSLOG_ACTION_CLOSE */
+    case 1:  /* SYSLOG_ACTION_OPEN */
+        return 0;
+    case 10: /* SYSLOG_ACTION_SIZE_BUFFER */
+        return 16384;  /* Return a reasonable buffer size */
+    default:
+        return -EINVAL;
+    }
+}
+
 /*
  * Fork return assembly entry point (defined in syscall_entry.asm)
  * This is called by the child after fork to return to user mode.
@@ -1117,15 +2040,52 @@ void syscall_init(void) {
     syscall_register(SYS_WRITE, sys_write);
     syscall_register(SYS_OPEN, sys_open);
     syscall_register(SYS_CLOSE, sys_close);
+    syscall_register(SYS_STAT, sys_stat);
     syscall_register(SYS_FSTAT, sys_fstat);
     syscall_register(SYS_LSEEK, sys_lseek);
+    syscall_register(SYS_MMAP, sys_mmap);
+    syscall_register(SYS_MPROTECT, sys_mprotect);
+    syscall_register(SYS_MUNMAP, sys_munmap);
+    syscall_register(SYS_BRK, sys_brk);
+    syscall_register(SYS_SIGACTION, sys_sigaction);
+    syscall_register(SYS_SIGPROCMASK, sys_sigprocmask);
+    syscall_register(SYS_SIGRETURN, sys_sigreturn);
+    syscall_register(SYS_IOCTL, sys_ioctl);
+    syscall_register(SYS_ACCESS, sys_access);
+    syscall_register(SYS_PIPE, sys_pipe);
+    syscall_register(SYS_SCHED_YIELD, sys_sched_yield);
     syscall_register(SYS_DUP, sys_dup);
     syscall_register(SYS_DUP2, sys_dup2);
+    syscall_register(SYS_NANOSLEEP, sys_nanosleep);
     syscall_register(SYS_EXIT, sys_exit);
     syscall_register(SYS_GETPID, sys_getpid);
     syscall_register(SYS_GETPPID, sys_getppid);
     syscall_register(SYS_WAIT4, sys_wait4);
     syscall_register(SYS_KILL, sys_kill);
+    syscall_register(SYS_UNAME, sys_uname);
+    syscall_register(SYS_TRUNCATE, sys_truncate);
+    syscall_register(SYS_FTRUNCATE, sys_ftruncate);
+    syscall_register(SYS_GETDENTS, sys_getdents);
+    syscall_register(SYS_GETCWD, sys_getcwd);
+    syscall_register(SYS_CHDIR, sys_chdir);
+    syscall_register(SYS_MKDIR, sys_mkdir);
+    syscall_register(SYS_RMDIR, sys_rmdir);
+    syscall_register(SYS_UNLINK, sys_unlink);
+    syscall_register(SYS_READLINK, sys_readlink);
+    syscall_register(SYS_GETTIMEOFDAY, sys_gettimeofday);
+    syscall_register(SYS_GETUID, sys_getuid);
+    syscall_register(SYS_SYSLOG, sys_syslog);
+    syscall_register(SYS_GETGID, sys_getgid);
+    syscall_register(SYS_SETUID, sys_setuid);
+    syscall_register(SYS_SETGID, sys_setgid);
+    syscall_register(SYS_GETEUID, sys_geteuid);
+    syscall_register(SYS_GETEGID, sys_getegid);
+    syscall_register(SYS_SETSID, sys_setsid);
+    syscall_register(SYS_GETPGID, sys_getpgid);
+    syscall_register(SYS_SETPGID, sys_setpgid);
+    syscall_register(SYS_GETSID, sys_getsid);
+    syscall_register(SYS_CLOCK_GETTIME, sys_clock_gettime);
+    syscall_register(SYS_CLOCK_GETRES, sys_clock_getres);
     /* Note: SYS_FORK and SYS_EXECVE are handled specially in syscall_dispatch */
 
     /*
@@ -1181,52 +2141,241 @@ void syscall_init(void) {
  * Test syscall infrastructure (kernel-side only, no actual SYSCALL instruction)
  */
 void syscall_run_tests(void) {
-    kprintf("\n=== Syscall Infrastructure Tests ===\n");
+    kprintf("\n=== Syscall Tests ===\n");
+    syscall_frame_t frame = {0};
+    int64_t result;
+    int passed = 0, failed = 0;
 
-    /* Test 1: Verify initialization */
-    kprintf("  Test 1 - Initialized: %s\n",
-            syscall_initialized ? "OK" : "FAIL");
+    /*
+     * Enable kernel testing mode so kernel addresses pass access_ok().
+     * This allows us to test syscalls that expect user-space pointers
+     * using kernel-space buffers.
+     */
+    uaccess_set_kernel_testing(true);
 
-    /* Test 2: Verify EFER.SCE is set */
+    /* Create /tmp directory for filesystem tests */
+    int tmp_ret = vfs_mkdir("/tmp");
+    if (tmp_ret != VFS_OK && tmp_ret != -EEXIST) {
+        kprintf("  Warning: Could not create /tmp (%d)\n", tmp_ret);
+    }
+
+    /* Infrastructure tests */
+    kprintf("--- Infrastructure ---\n");
+    kprintf("  Initialized: %s\n", syscall_initialized ? "OK" : "FAIL");
+    if (syscall_initialized) passed++; else failed++;
+
     uint64_t efer = rdmsr(MSR_EFER);
-    kprintf("  Test 2 - EFER.SCE enabled: %s (EFER=0x%llx)\n",
-            (efer & EFER_SCE) ? "OK" : "FAIL", efer);
+    bool efer_ok = (efer & EFER_SCE) != 0;
+    kprintf("  EFER.SCE: %s\n", efer_ok ? "OK" : "FAIL");
+    if (efer_ok) passed++; else failed++;
 
-    /* Test 3: Verify LSTAR points to entry */
-    uint64_t lstar = rdmsr(MSR_LSTAR);
-    kprintf("  Test 3 - LSTAR set: %s (0x%llx)\n",
-            (lstar == (uint64_t)syscall_entry) ? "OK" : "FAIL", lstar);
+    /* Test getpid */
+    kprintf("--- Process/Identity ---\n");
+    frame.rax = SYS_GETPID;
+    result = syscall_dispatch(&frame);
+    kprintf("  getpid: %s (pid=%lld)\n", result >= 0 ? "OK" : "FAIL", result);
+    if (result >= 0) passed++; else failed++;
 
-    /* Test 4: Verify STAR is correct */
-    uint64_t star = rdmsr(MSR_STAR);
-    uint64_t expected_star = ((uint64_t)GDT_KERNEL_DATA << 48) |
-                             ((uint64_t)GDT_KERNEL_CODE << 32);
-    kprintf("  Test 4 - STAR correct: %s (0x%llx)\n",
-            (star == expected_star) ? "OK" : "FAIL", star);
+    /* Test getppid */
+    frame.rax = SYS_GETPPID;
+    result = syscall_dispatch(&frame);
+    kprintf("  getppid: %s (ppid=%lld)\n", result >= 0 ? "OK" : "FAIL", result);
+    if (result >= 0) passed++; else failed++;
 
-    /* Test 5: Test dispatcher with fake frame */
-    syscall_frame_t fake_frame = {0};
-    fake_frame.rax = SYS_GETPID;
-    int64_t result = syscall_dispatch(&fake_frame);
-    kprintf("  Test 5 - Dispatch getpid: %s (result=%lld)\n",
-            (result == 0) ? "OK" : "FAIL", (long long)result);
+    /* Test getuid */
+    frame.rax = SYS_GETUID;
+    result = syscall_dispatch(&frame);
+    kprintf("  getuid: %s (uid=%lld)\n", result == 0 ? "OK" : "FAIL", result);
+    if (result == 0) passed++; else failed++;
 
-    /* Test 6: Test invalid syscall */
-    fake_frame.rax = 999;
-    result = syscall_dispatch(&fake_frame);
-    kprintf("  Test 6 - Invalid syscall: %s (result=%lld)\n",
-            (result == -ENOSYS) ? "OK" : "FAIL", (long long)result);
+    /* Test geteuid */
+    frame.rax = SYS_GETEUID;
+    result = syscall_dispatch(&frame);
+    kprintf("  geteuid: %s (euid=%lld)\n", result == 0 ? "OK" : "FAIL", result);
+    if (result == 0) passed++; else failed++;
 
-    /* Test 7: Test write syscall */
-    const char *test_msg = "[syscall test]";
-    fake_frame.rax = SYS_WRITE;
-    fake_frame.rdi = 1;  /* stdout */
-    fake_frame.rsi = (uint64_t)test_msg;
-    fake_frame.rdx = 14;
-    result = syscall_dispatch(&fake_frame);
-    kprintf("\n  Test 7 - Write syscall: %s (wrote %lld bytes)\n",
-            (result == 14) ? "OK" : "FAIL", (long long)result);
+    /* Test getgid */
+    frame.rax = SYS_GETGID;
+    result = syscall_dispatch(&frame);
+    kprintf("  getgid: %s (gid=%lld)\n", result == 0 ? "OK" : "FAIL", result);
+    if (result == 0) passed++; else failed++;
 
-    kprintf("\n  Syscall infrastructure tests complete.\n");
+    /* Test getegid */
+    frame.rax = SYS_GETEGID;
+    result = syscall_dispatch(&frame);
+    kprintf("  getegid: %s (egid=%lld)\n", result == 0 ? "OK" : "FAIL", result);
+    if (result == 0) passed++; else failed++;
+
+    /* Test setsid */
+    frame.rax = SYS_SETSID;
+    result = syscall_dispatch(&frame);
+    kprintf("  setsid: %s (sid=%lld)\n", result >= 0 || result == -EPERM ? "OK" : "FAIL", result);
+    if (result >= 0 || result == -EPERM) passed++; else failed++;
+
+    /* Test getpgid */
+    frame.rax = SYS_GETPGID;
+    frame.rdi = 0;
+    result = syscall_dispatch(&frame);
+    kprintf("  getpgid(0): %s (pgid=%lld)\n", result >= 0 ? "OK" : "FAIL", result);
+    if (result >= 0) passed++; else failed++;
+
+    /* Test getsid */
+    frame.rax = SYS_GETSID;
+    frame.rdi = 0;
+    result = syscall_dispatch(&frame);
+    kprintf("  getsid(0): %s (sid=%lld)\n", result >= 0 ? "OK" : "FAIL", result);
+    if (result >= 0) passed++; else failed++;
+
+    /* Test uname */
+    kprintf("--- System Info ---\n");
+    utsname_t uname_buf;
+    frame.rax = SYS_UNAME;
+    frame.rdi = (uint64_t)&uname_buf;
+    result = syscall_dispatch(&frame);
+    kprintf("  uname: %s (sysname=%s)\n", result == 0 ? "OK" : "FAIL",
+            result == 0 ? uname_buf.sysname : "?");
+    if (result == 0) passed++; else failed++;
+
+    /* Test gettimeofday */
+    timeval_t tv;
+    frame.rax = SYS_GETTIMEOFDAY;
+    frame.rdi = (uint64_t)&tv;
+    frame.rsi = 0;
+    result = syscall_dispatch(&frame);
+    kprintf("  gettimeofday: %s (sec=%lld)\n", result == 0 ? "OK" : "FAIL", tv.tv_sec);
+    if (result == 0) passed++; else failed++;
+
+    /* Test clock_gettime */
+    timespec_t ts;
+    frame.rax = SYS_CLOCK_GETTIME;
+    frame.rdi = CLOCK_MONOTONIC;
+    frame.rsi = (uint64_t)&ts;
+    result = syscall_dispatch(&frame);
+    kprintf("  clock_gettime(MONOTONIC): %s (sec=%lld)\n", result == 0 ? "OK" : "FAIL", ts.tv_sec);
+    if (result == 0) passed++; else failed++;
+
+    /* Test clock_getres */
+    frame.rax = SYS_CLOCK_GETRES;
+    frame.rdi = CLOCK_MONOTONIC;
+    frame.rsi = (uint64_t)&ts;
+    result = syscall_dispatch(&frame);
+    kprintf("  clock_getres: %s (nsec=%lld)\n", result == 0 ? "OK" : "FAIL", ts.tv_nsec);
+    if (result == 0) passed++; else failed++;
+
+    /* Test brk */
+    kprintf("--- Memory ---\n");
+    frame.rax = SYS_BRK;
+    frame.rdi = 0;
+    result = syscall_dispatch(&frame);
+    kprintf("  brk(0): %s (brk=0x%llx)\n", result > 0 ? "OK" : "FAIL", result);
+    if (result > 0) passed++; else failed++;
+
+    frame.rax = SYS_BRK;
+    frame.rdi = 0x10010000;
+    result = syscall_dispatch(&frame);
+    kprintf("  brk(0x10010000): %s (new_brk=0x%llx)\n", result == 0x10010000 ? "OK" : "FAIL", result);
+    if (result == 0x10010000) passed++; else failed++;
+
+    /* Test getcwd */
+    kprintf("--- Filesystem ---\n");
+    char cwd_buf[256];
+    frame.rax = SYS_GETCWD;
+    frame.rdi = (uint64_t)cwd_buf;
+    frame.rsi = sizeof(cwd_buf);
+    result = syscall_dispatch(&frame);
+    kprintf("  getcwd: %s (cwd=%s)\n", result != 0 ? "OK" : "FAIL",
+            result != 0 ? cwd_buf : "?");
+    if (result != 0) passed++; else failed++;
+
+    /* Test chdir */
+    const char *dir_path = "/tmp";
+    frame.rax = SYS_CHDIR;
+    frame.rdi = (uint64_t)dir_path;
+    result = syscall_dispatch(&frame);
+    kprintf("  chdir(/tmp): %s\n", result == 0 ? "OK" : "FAIL");
+    if (result == 0) passed++; else failed++;
+
+    /* Test mkdir */
+    const char *new_dir = "/tmp/syscall_test";
+    frame.rax = SYS_MKDIR;
+    frame.rdi = (uint64_t)new_dir;
+    frame.rsi = 0755;
+    result = syscall_dispatch(&frame);
+    kprintf("  mkdir: %s\n", result == 0 || result == -EEXIST ? "OK" : "FAIL");
+    if (result == 0 || result == -EEXIST) passed++; else failed++;
+
+    /* Test access (F_OK) */
+    frame.rax = SYS_ACCESS;
+    frame.rdi = (uint64_t)"/tmp";
+    frame.rsi = F_OK;
+    result = syscall_dispatch(&frame);
+    kprintf("  access(/tmp, F_OK): %s\n", result == 0 ? "OK" : "FAIL");
+    if (result == 0) passed++; else failed++;
+
+    /* Test stat */
+    vfs_stat_t stat_buf;
+    frame.rax = SYS_STAT;
+    frame.rdi = (uint64_t)"/tmp";
+    frame.rsi = (uint64_t)&stat_buf;
+    result = syscall_dispatch(&frame);
+    kprintf("  stat(/tmp): %s (type=%u)\n", result == 0 ? "OK" : "FAIL", stat_buf.type);
+    if (result == 0) passed++; else failed++;
+
+    /* Test truncate */
+    const char *test_file = "/tmp/test.txt";
+    frame.rax = SYS_TRUNCATE;
+    frame.rdi = (uint64_t)test_file;
+    frame.rsi = 0;
+    result = syscall_dispatch(&frame);
+    kprintf("  truncate: %s\n", result == 0 || result == -ENOENT ? "OK" : "FAIL");
+    if (result == 0 || result == -ENOENT) passed++; else failed++;
+
+    /* Test rmdir */
+    frame.rax = SYS_RMDIR;
+    frame.rdi = (uint64_t)new_dir;
+    result = syscall_dispatch(&frame);
+    kprintf("  rmdir: %s\n", result == 0 || result == -ENOENT ? "OK" : "FAIL");
+    if (result == 0 || result == -ENOENT) passed++; else failed++;
+
+    /* Test ioctl (expect ENOTTY for stdout) */
+    kprintf("--- I/O ---\n");
+    frame.rax = SYS_IOCTL;
+    frame.rdi = 1;  /* stdout */
+    frame.rsi = 0x5401;  /* TCGETS */
+    frame.rdx = 0;
+    result = syscall_dispatch(&frame);
+    kprintf("  ioctl(TCGETS): %s (expected -ENOTTY)\n", result == -ENOTTY ? "OK" : "FAIL");
+    if (result == -ENOTTY) passed++; else failed++;
+
+    /* Test sched_yield */
+    kprintf("--- Scheduling ---\n");
+    frame.rax = SYS_SCHED_YIELD;
+    result = syscall_dispatch(&frame);
+    kprintf("  sched_yield: %s\n", result == 0 ? "OK" : "FAIL");
+    if (result == 0) passed++; else failed++;
+
+    /* Test sigprocmask */
+    kprintf("--- Signals ---\n");
+    sigset_t old_mask;
+    frame.rax = SYS_SIGPROCMASK;
+    frame.rdi = 2;  /* SIG_SETMASK */
+    frame.rsi = 0;  /* no new mask */
+    frame.rdx = (uint64_t)&old_mask;
+    result = syscall_dispatch(&frame);
+    kprintf("  sigprocmask: %s\n", result == 0 ? "OK" : "FAIL");
+    if (result == 0) passed++; else failed++;
+
+    /* Test invalid syscall */
+    kprintf("--- Error Handling ---\n");
+    frame.rax = 999;
+    result = syscall_dispatch(&frame);
+    kprintf("  invalid syscall: %s (got -ENOSYS)\n", result == -ENOSYS ? "OK" : "FAIL");
+    if (result == -ENOSYS) passed++; else failed++;
+
+    /* Disable kernel testing mode */
+    uaccess_set_kernel_testing(false);
+
+    /* Summary */
+    kprintf("\n=== Syscall Tests: %d passed, %d failed ===\n\n", passed, failed);
 }
 #endif

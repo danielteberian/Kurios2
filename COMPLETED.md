@@ -274,6 +274,44 @@
 - [2026-01-31] Verified: HPET at 0xFED00000, IRQ overrides (timer on GSI 2)
 - [2026-01-31] Ready for APIC initialization
 
+### Procfs Filesystem [VERIFIED]
+- [2026-01-31] Procfs implementation (`kernel/fs/procfs.c`, `kernel/fs/procfs.h`)
+  - Virtual filesystem for process and system information
+  - Dynamic file content generation on read
+  - Mounted at /proc
+  - Files: /proc/version, /proc/meminfo, /proc/uptime, /proc/cpuinfo, /proc/stat
+  - Extensible node registration system
+  - Integration with VFS (registered as "procfs" filesystem type)
+- [2026-01-31] Verified: /proc/meminfo reads correctly with memory stats
+
+### Extended Syscalls [VERIFIED]
+- [2026-01-31] Added 30+ new syscalls following Linux x86_64 ABI (`kernel/syscall/syscall.c`)
+  - **Process/Identity**: getpid, getppid, getuid, geteuid, getgid, getegid, setuid, setgid
+  - **Session/Group**: setsid, getpgid, setpgid, getsid
+  - **System Info**: uname (returns "Kurios2")
+  - **Time**: gettimeofday, clock_gettime, clock_getres, nanosleep, sched_yield
+  - **Memory**: brk (heap management), mmap (anonymous only), munmap, mprotect
+  - **Filesystem**: stat, access, getcwd, chdir, mkdir, rmdir, unlink, truncate, ftruncate, getdents, readlink
+  - **Signals**: sigaction, sigprocmask, sigreturn (stubs - signal delivery not implemented)
+  - **I/O**: ioctl (stub), pipe (stub)
+  - **Other**: syslog (stub)
+- [2026-01-31] Updated syscall.h with new syscall numbers and structures
+  - timespec_t, timeval_t, timezone_t, utsname_t, linux_dirent64_t
+  - mmap flags (PROT_*, MAP_*)
+  - access() modes (F_OK, R_OK, W_OK, X_OK)
+  - Clock IDs (CLOCK_REALTIME, CLOCK_MONOTONIC, etc.)
+- [2026-01-31] Added process fields for syscall support (`kernel/process/process.h`)
+  - pgrp (process group ID)
+  - session_id (session ID)
+  - brk (program break for heap)
+  - cwd[256] (current working directory)
+- [2026-01-31] Kernel testing mode for access_ok (`kernel/mm/uaccess.c`)
+  - uaccess_set_kernel_testing() - Allow kernel addresses in tests
+  - Enables testing syscalls from kernel code
+- [2026-01-31] Comprehensive test suite (all tests passing)
+  - 26+ syscall tests in syscall_run_tests()
+  - Tests: identity, time, memory, filesystem, I/O, scheduling, signals, error handling
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

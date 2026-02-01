@@ -14,17 +14,54 @@
 #define SYS_WRITE       1
 #define SYS_OPEN        2
 #define SYS_CLOSE       3
+#define SYS_STAT        4
 #define SYS_FSTAT       5
 #define SYS_LSEEK       8
+#define SYS_MMAP        9
+#define SYS_MPROTECT    10
+#define SYS_MUNMAP      11
+#define SYS_BRK         12
+#define SYS_SIGACTION   13
+#define SYS_SIGPROCMASK 14
+#define SYS_SIGRETURN   15
+#define SYS_IOCTL       16
+#define SYS_ACCESS      21
+#define SYS_PIPE        22
+#define SYS_SCHED_YIELD 24
 #define SYS_DUP         32
 #define SYS_DUP2        33
+#define SYS_NANOSLEEP   35
 #define SYS_GETPID      39
 #define SYS_FORK        57
 #define SYS_EXECVE      59
 #define SYS_EXIT        60
 #define SYS_WAIT4       61      /* waitpid - wait for child process */
 #define SYS_KILL        62      /* kill - send signal */
+#define SYS_UNAME       63
+#define SYS_TRUNCATE    76
+#define SYS_FTRUNCATE   77
+#define SYS_GETDENTS    78
+#define SYS_GETCWD      79
+#define SYS_CHDIR       80
+#define SYS_MKDIR       83
+#define SYS_RMDIR       84
+#define SYS_UNLINK      87
+#define SYS_READLINK    89
+#define SYS_GETTIMEOFDAY 96
+#define SYS_GETUID      102
+#define SYS_SYSLOG      103
+#define SYS_GETGID      104
+#define SYS_SETUID      105
+#define SYS_SETGID      106
+#define SYS_GETEUID     107
+#define SYS_GETEGID     108
 #define SYS_GETPPID     110
+#define SYS_SETSID      112
+#define SYS_GETPGID     121
+#define SYS_SETPGID     109
+#define SYS_GETSID      124
+#define SYS_CLOCK_GETTIME 228
+#define SYS_CLOCK_GETRES  229
 
 /* waitpid options */
 #define WNOHANG         1       /* Don't block waiting */
@@ -37,6 +74,80 @@
 #define WTERMSIG(status)        ((status) & 0x7f)
 #define WIFSTOPPED(status)      (((status) & 0xff) == 0x7f)
 #define WSTOPSIG(status)        (((status) >> 8) & 0xff)
+
+/* mmap flags */
+#define PROT_NONE       0x0
+#define PROT_READ       0x1
+#define PROT_WRITE      0x2
+#define PROT_EXEC       0x4
+#define MAP_SHARED      0x01
+#define MAP_PRIVATE     0x02
+#define MAP_FIXED       0x10
+#define MAP_ANONYMOUS   0x20
+#define MAP_FAILED      ((void *)-1)
+
+/* access() modes */
+#define F_OK            0       /* Test for existence */
+#define X_OK            1       /* Test for execute permission */
+#define W_OK            2       /* Test for write permission */
+#define R_OK            4       /* Test for read permission */
+
+/* clock_gettime clocks */
+#define CLOCK_REALTIME          0
+#define CLOCK_MONOTONIC         1
+#define CLOCK_PROCESS_CPUTIME   2
+#define CLOCK_THREAD_CPUTIME    3
+#define CLOCK_MONOTONIC_RAW     4
+#define CLOCK_REALTIME_COARSE   5
+#define CLOCK_MONOTONIC_COARSE  6
+
+/* timespec structure */
+typedef struct timespec {
+    int64_t tv_sec;     /* Seconds */
+    int64_t tv_nsec;    /* Nanoseconds */
+} timespec_t;
+
+/* timeval structure */
+typedef struct timeval {
+    int64_t tv_sec;     /* Seconds */
+    int64_t tv_usec;    /* Microseconds */
+} timeval_t;
+
+/* timezone structure */
+typedef struct timezone {
+    int32_t tz_minuteswest;
+    int32_t tz_dsttime;
+} timezone_t;
+
+/* utsname structure for uname() */
+#define UTSNAME_LENGTH 65
+typedef struct utsname {
+    char sysname[UTSNAME_LENGTH];
+    char nodename[UTSNAME_LENGTH];
+    char release[UTSNAME_LENGTH];
+    char version[UTSNAME_LENGTH];
+    char machine[UTSNAME_LENGTH];
+    char domainname[UTSNAME_LENGTH];
+} utsname_t;
+
+/* Directory entry for getdents */
+typedef struct linux_dirent64 {
+    uint64_t d_ino;
+    int64_t  d_off;
+    uint16_t d_reclen;
+    uint8_t  d_type;
+    char     d_name[];  /* Null-terminated filename */
+} linux_dirent64_t;
+
+/* d_type values */
+#define DT_UNKNOWN      0
+#define DT_FIFO         1
+#define DT_CHR          2
+#define DT_DIR          4
+#define DT_BLK          6
+#define DT_REG          8
+#define DT_LNK          10
+#define DT_SOCK         12
 
 /* Maximum syscall number */
 #define SYS_MAX         256

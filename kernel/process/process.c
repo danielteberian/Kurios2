@@ -201,6 +201,10 @@ process_t *process_create(const char *name) {
     signal_state_init(proc->signals);
     proc->entry_point = 0;
     proc->user_stack = 0;
+    proc->brk = 0x10000000;  /* Default heap start */
+    proc->pgrp = pid;        /* Process group = own PID by default */
+    proc->session_id = current_process ? current_process->session_id : pid;
+    strncpy(proc->cwd, "/", sizeof(proc->cwd));  /* Default to root */
     copy_process_name(proc, name);
 
     /* Add to process table */

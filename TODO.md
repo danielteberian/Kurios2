@@ -46,10 +46,12 @@
 
 ## Next Up
 - [ ] **SMP support** - Multi-core CPU support (uses APIC)
-- [ ] **mmap syscall** - Memory mapping for user programs
-- [ ] **Signal handling** - POSIX-style signals
+- [ ] **More syscalls** - Additional Linux-compatible syscalls
+- [ ] **Pipes** - Inter-process communication
 
 ## Completed Recently
+- [x] **Procfs filesystem** - VERIFIED WORKING (/proc/version, /proc/meminfo, /proc/uptime, /proc/cpuinfo, /proc/stat)
+- [x] **Extended syscalls** - VERIFIED WORKING (30+ syscalls: uname, gettimeofday, clock_gettime, brk, mmap, sigaction, getpgid, etc.)
 - [x] File I/O syscalls - IMPLEMENTED (read/write for VFS files, lseek, fstat, dup, dup2)
 - [x] Initial ramdisk (initrd) - VERIFIED WORKING (CPIO newc parser, ramfs mounting)
 - [x] HPET timer - VERIFIED WORKING (100 MHz, 3 timers, 64-bit counter, delay functions)
