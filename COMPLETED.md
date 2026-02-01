@@ -223,6 +223,22 @@
 - [2026-01-31] Verified: All 8 APIC tests pass
 - [2026-01-31] Verified: Timer/keyboard interrupts work via APIC
 
+### File I/O Syscalls [IMPLEMENTED]
+- [2026-01-31] Enhanced file I/O syscalls (`kernel/syscall/syscall.c`)
+  - sys_read() - Extended to read from VFS files (fd > 2)
+  - sys_write() - Extended to write to VFS files (fd > 2)
+  - sys_lseek() - Seek to position in file (SEEK_SET, SEEK_CUR, SEEK_END)
+  - sys_fstat() - Get file status (size, type, permissions)
+  - sys_dup() - Duplicate file descriptor
+  - sys_dup2() - Duplicate to specific file descriptor
+- [2026-01-31] VFS extensions (`kernel/fs/vfs.c`, `kernel/fs/vfs.h`)
+  - vfs_dup() - Duplicate file descriptor with ref count management
+  - vfs_dup2() - Duplicate to specific fd, closes target if open
+- [2026-01-31] Syscall numbers (`kernel/syscall/syscall.h`)
+  - SYS_FSTAT (5), SYS_LSEEK (8), SYS_DUP (32), SYS_DUP2 (33)
+- [2026-01-31] User-kernel data transfer via copy_to_user/copy_from_user
+- [2026-01-31] Chunked reads/writes for large buffers (256-byte chunks)
+
 ### Initial Ramdisk (Initrd) [VERIFIED]
 - [2026-01-31] Initrd subsystem (`kernel/initrd/initrd.c`, `kernel/initrd/initrd.h`)
   - CPIO newc format parser (magic "070701")

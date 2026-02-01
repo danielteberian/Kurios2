@@ -14,10 +14,14 @@
 #define SYS_WRITE       1
 #define SYS_OPEN        2
 #define SYS_CLOSE       3
+#define SYS_FSTAT       5
+#define SYS_LSEEK       8
+#define SYS_DUP         32
+#define SYS_DUP2        33
+#define SYS_GETPID      39
 #define SYS_FORK        57
 #define SYS_EXECVE      59
 #define SYS_EXIT        60
-#define SYS_GETPID      39
 #define SYS_GETPPID     110
 
 /* Maximum syscall number */

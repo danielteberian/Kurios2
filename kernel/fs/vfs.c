@@ -740,6 +740,93 @@ int vfs_truncate(const char *path, uint64_t size) {
 }
 
 /*
+ * File Descriptor Duplication
+ */
+int vfs_dup(int oldfd) {
+    if (oldfd < 0 || oldfd >= VFS_MAX_FDS) {
+        return VFS_EBADF;
+    }
+
+    file_t *file = get_file(oldfd);
+    if (!file || file == (file_t *)1) {
+        return VFS_EBADF;
+    }
+
+    /* Increment reference counts */
+    file->ref_count++;
+    if (file->node) {
+        vfs_node_ref(file->node);
+    }
+
+    /* Allocate new fd for same file */
+    int newfd = alloc_fd(file);
+    if (newfd < 0) {
+        /* Rollback ref count increments */
+        file->ref_count--;
+        if (file->node) {
+            vfs_node_unref(file->node);
+        }
+        return VFS_EMFILE;
+    }
+
+    return newfd;
+}
+
+int vfs_dup2(int oldfd, int newfd) {
+    if (oldfd < 0 || oldfd >= VFS_MAX_FDS ||
+        newfd < 0 || newfd >= VFS_MAX_FDS) {
+        return VFS_EBADF;
+    }
+
+    /* If same, just return newfd */
+    if (oldfd == newfd) {
+        file_t *file = get_file(oldfd);
+        if (!file || file == (file_t *)1) {
+            return VFS_EBADF;
+        }
+        return newfd;
+    }
+
+    file_t *file = get_file(oldfd);
+    if (!file || file == (file_t *)1) {
+        return VFS_EBADF;
+    }
+
+    /* Close newfd if it's open */
+    file_t *old_file = get_file(newfd);
+    if (old_file && old_file != (file_t *)1) {
+        vfs_close(newfd);
+    }
+
+    /* Increment reference counts */
+    file->ref_count++;
+    if (file->node) {
+        vfs_node_ref(file->node);
+    }
+
+    /* Allocate at specific fd */
+    fd_table_t *fdt = get_current_fd_table();
+    if (fdt) {
+        int result = fd_table_alloc_at(fdt, newfd, file, 0);
+        if (result < 0) {
+            /* Rollback */
+            file->ref_count--;
+            if (file->node) {
+                vfs_node_unref(file->node);
+            }
+            return VFS_EBADF;
+        }
+    } else {
+        /* Fallback to global table */
+        uint64_t flags = spin_lock_irqsave(&fd_lock);
+        fd_table[newfd] = file;
+        spin_unlock_irqrestore(&fd_lock, flags);
+    }
+
+    return newfd;
+}
+
+/*
  * Directory Operations
  */
 int vfs_mkdir(const char *path) {

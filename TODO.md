@@ -46,9 +46,11 @@
 
 ## Next Up
 - [ ] **SMP support** - Multi-core CPU support (uses APIC)
-- [ ] **More syscalls** - open, read, close, mmap for user programs
+- [ ] **mmap syscall** - Memory mapping for user programs
+- [ ] **Signal handling** - POSIX-style signals
 
 ## Completed Recently
+- [x] File I/O syscalls - IMPLEMENTED (read/write for VFS files, lseek, fstat, dup, dup2)
 - [x] Initial ramdisk (initrd) - VERIFIED WORKING (CPIO newc parser, ramfs mounting)
 - [x] HPET timer - VERIFIED WORKING (100 MHz, 3 timers, 64-bit counter, delay functions)
 - [x] APIC setup - VERIFIED WORKING (Local APIC, I/O APIC, IRQ routing, PIC disabled)

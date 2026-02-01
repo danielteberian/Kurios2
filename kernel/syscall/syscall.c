@@ -102,7 +102,7 @@ static int64_t sys_exit(uint64_t status, uint64_t arg2,
  * sys_read - read from a file descriptor
  *
  * For stdin (fd 0): reads from keyboard
- * For other fds: TODO - use VFS when open() is implemented
+ * For other fds: reads from VFS
  */
 #define READ_CHUNK_SIZE 256
 
@@ -182,7 +182,39 @@ static int64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
         return (int64_t)bytes_read;
     }
 
-    /* TODO: Handle other file descriptors via VFS when open() is implemented */
+    /* Handle VFS files (fd > 2) */
+    if (fd > 2) {
+        char kbuf[READ_CHUNK_SIZE];
+        uint64_t total = 0;
+
+        while (total < count) {
+            uint64_t chunk = count - total;
+            if (chunk > READ_CHUNK_SIZE) {
+                chunk = READ_CHUNK_SIZE;
+            }
+
+            ssize_t n = vfs_read((int)fd, kbuf, chunk);
+            if (n < 0) {
+                return total > 0 ? (int64_t)total : (int64_t)n;
+            }
+            if (n == 0) {
+                break;  /* EOF */
+            }
+
+            if (copy_to_user((char *)buf + total, kbuf, n) < 0) {
+                return total > 0 ? (int64_t)total : -EFAULT;
+            }
+
+            total += n;
+            if ((uint64_t)n < chunk) {
+                break;  /* Short read */
+            }
+        }
+
+        return (int64_t)total;
+    }
+
+    /* fd 1, 2 (stdout/stderr) are not readable */
     return -EBADF;
 }
 
@@ -190,7 +222,7 @@ static int64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
  * sys_write - write to a file descriptor
  *
  * For stdout/stderr (fd 1, 2): outputs to serial console
- * For other fds: TODO - use VFS
+ * For other fds: writes to VFS
  */
 #define WRITE_CHUNK_SIZE 256
 
@@ -233,7 +265,36 @@ static int64_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
         return (int64_t)written;
     }
 
-    /* TODO: Handle other file descriptors via VFS */
+    /* Handle VFS files (fd > 2) */
+    if (fd > 2) {
+        char kbuf[WRITE_CHUNK_SIZE];
+        uint64_t total = 0;
+
+        while (total < count) {
+            uint64_t chunk = count - total;
+            if (chunk > WRITE_CHUNK_SIZE) {
+                chunk = WRITE_CHUNK_SIZE;
+            }
+
+            if (copy_from_user(kbuf, (const char *)buf + total, chunk) < 0) {
+                return total > 0 ? (int64_t)total : -EFAULT;
+            }
+
+            ssize_t n = vfs_write((int)fd, kbuf, chunk);
+            if (n < 0) {
+                return total > 0 ? (int64_t)total : (int64_t)n;
+            }
+
+            total += n;
+            if ((uint64_t)n < chunk) {
+                break;  /* Short write */
+            }
+        }
+
+        return (int64_t)total;
+    }
+
+    /* fd 0 (stdin) is not writable */
     return -EBADF;
 }
 
@@ -299,6 +360,118 @@ static int64_t sys_close(uint64_t fd, uint64_t arg2, uint64_t arg3,
     vfs_close((int)fd);
 
     return 0;
+}
+
+/*
+ * sys_lseek - reposition file offset
+ *
+ * @param fd      File descriptor
+ * @param offset  Offset to seek to
+ * @param whence  SEEK_SET, SEEK_CUR, or SEEK_END
+ * @return New offset on success, negative error on failure
+ */
+static int64_t sys_lseek(uint64_t fd, uint64_t offset, uint64_t whence,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    DEBUG("sys_lseek(fd=%llu, offset=%lld, whence=%llu)", fd, (int64_t)offset, whence);
+
+    /* stdin/stdout/stderr are not seekable */
+    if (fd < 3) {
+        return -ESPIPE;
+    }
+
+    return vfs_seek((int)fd, (int64_t)offset, (int)whence);
+}
+
+/*
+ * sys_fstat - get file status
+ *
+ * @param fd      File descriptor
+ * @param statbuf User pointer to vfs_stat_t structure
+ * @return 0 on success, negative error on failure
+ */
+static int64_t sys_fstat(uint64_t fd, uint64_t statbuf, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    DEBUG("sys_fstat(fd=%llu, statbuf=0x%llx)", fd, statbuf);
+
+    if (!access_ok((void *)statbuf, sizeof(vfs_stat_t))) {
+        return -EFAULT;
+    }
+
+    /* For stdin/stdout/stderr, return a minimal stat */
+    if (fd < 3) {
+        vfs_stat_t kstat;
+        memset(&kstat, 0, sizeof(kstat));
+        kstat.type = VFS_CHARDEV;
+        kstat.permissions = VFS_PERM_READ | VFS_PERM_WRITE;
+        kstat.nlink = 1;
+
+        if (copy_to_user((void *)statbuf, &kstat, sizeof(kstat)) < 0) {
+            return -EFAULT;
+        }
+        return 0;
+    }
+
+    vfs_stat_t kstat;
+    int ret = vfs_fstat((int)fd, &kstat);
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (copy_to_user((void *)statbuf, &kstat, sizeof(kstat)) < 0) {
+        return -EFAULT;
+    }
+
+    return 0;
+}
+
+/*
+ * sys_dup - duplicate a file descriptor
+ *
+ * @param oldfd  File descriptor to duplicate
+ * @return New file descriptor on success, negative error on failure
+ */
+static int64_t sys_dup(uint64_t oldfd, uint64_t arg2, uint64_t arg3,
+                       uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    DEBUG("sys_dup(oldfd=%llu)", oldfd);
+
+    /* stdin/stdout/stderr duplication not supported for now */
+    if (oldfd < 3) {
+        return -EBADF;
+    }
+
+    return vfs_dup((int)oldfd);
+}
+
+/*
+ * sys_dup2 - duplicate a file descriptor to a specific fd
+ *
+ * @param oldfd  File descriptor to duplicate
+ * @param newfd  Target file descriptor
+ * @return newfd on success, negative error on failure
+ */
+static int64_t sys_dup2(uint64_t oldfd, uint64_t newfd, uint64_t arg3,
+                        uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    DEBUG("sys_dup2(oldfd=%llu, newfd=%llu)", oldfd, newfd);
+
+    /* stdin/stdout/stderr cannot be targets for now */
+    if (newfd < 3) {
+        return -EBADF;
+    }
+
+    /* stdin/stdout/stderr duplication not supported for now */
+    if (oldfd < 3) {
+        return -EBADF;
+    }
+
+    return vfs_dup2((int)oldfd, (int)newfd);
 }
 
 /*
@@ -814,6 +987,10 @@ void syscall_init(void) {
     syscall_register(SYS_WRITE, sys_write);
     syscall_register(SYS_OPEN, sys_open);
     syscall_register(SYS_CLOSE, sys_close);
+    syscall_register(SYS_FSTAT, sys_fstat);
+    syscall_register(SYS_LSEEK, sys_lseek);
+    syscall_register(SYS_DUP, sys_dup);
+    syscall_register(SYS_DUP2, sys_dup2);
     syscall_register(SYS_EXIT, sys_exit);
     syscall_register(SYS_GETPID, sys_getpid);
     syscall_register(SYS_GETPPID, sys_getppid);

@@ -195,6 +195,12 @@ int vfs_fstat(int fd, vfs_stat_t *st);
 int vfs_truncate(const char *path, uint64_t size);
 
 /*
+ * File Descriptor Duplication
+ */
+int vfs_dup(int oldfd);
+int vfs_dup2(int oldfd, int newfd);
+
+/*
  * Directory Operations
  */
 int vfs_mkdir(const char *path);
