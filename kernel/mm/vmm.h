@@ -21,6 +21,9 @@
 #define PTE_GLOBAL      (1UL << 8)   /* Global page (not flushed on CR3 switch) */
 #define PTE_NX          (1UL << 63)  /* No-execute (requires EFER.NXE) */
 
+/* Software-defined bits (available bits 9-11, 52-62) */
+#define PTE_COW         (1UL << 9)   /* Copy-on-write: page is shared, copy on write */
+
 /* Common flag combinations */
 #define PTE_KERNEL_RW   (PTE_PRESENT | PTE_WRITABLE | PTE_GLOBAL)
 #define PTE_KERNEL_RO   (PTE_PRESENT | PTE_GLOBAL)

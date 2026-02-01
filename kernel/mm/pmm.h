@@ -22,6 +22,7 @@
 #define PAGE_FLAG_KERNEL    (1 << 2)    /* Kernel code/data */
 #define PAGE_FLAG_HEAD      (1 << 3)    /* First page of a compound allocation */
 #define PAGE_FLAG_TAIL      (1 << 4)    /* Tail page of a compound allocation */
+#define PAGE_FLAG_COW       (1 << 5)    /* Copy-on-write page (shared, needs copy on write) */
 
 /*
  * Page descriptor - one per physical page
@@ -96,6 +97,27 @@ page_t *phys_to_page(uint64_t phys_addr);
 
 /* Get physical address from page descriptor */
 uint64_t page_to_phys(page_t *page);
+
+/*
+ * Reference counting for COW pages
+ */
+
+/* Increment page reference count */
+void page_get(page_t *page);
+
+/* Decrement page reference count, returns new count */
+uint32_t page_put(page_t *page);
+
+/* Get current reference count */
+static inline uint32_t page_refcount(page_t *page) {
+    return page ? page->refcount : 0;
+}
+
+/* Increment refcount for physical address */
+void page_get_phys(uint64_t phys);
+
+/* Decrement refcount for physical address, free if zero, returns new count */
+uint32_t page_put_phys(uint64_t phys);
 
 /* Debug: print PMM statistics */
 void pmm_dump_stats(void);

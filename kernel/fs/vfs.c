@@ -739,6 +739,27 @@ int vfs_truncate(const char *path, uint64_t size) {
     return err;
 }
 
+int vfs_ioctl(int fd, unsigned long request, void *arg) {
+    if (fd < 0 || fd >= VFS_MAX_FDS) {
+        return VFS_EBADF;
+    }
+
+    file_t *file = get_file(fd);
+    if (!file || file == (file_t *)1) {
+        return VFS_EBADF;
+    }
+
+    if (!file->node) {
+        return VFS_EBADF;
+    }
+
+    if (file->node->ops && file->node->ops->ioctl) {
+        return file->node->ops->ioctl(file->node, request, arg);
+    }
+
+    return VFS_EINVAL;  /* No ioctl handler */
+}
+
 /*
  * File Descriptor Duplication
  */

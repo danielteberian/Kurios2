@@ -22,6 +22,8 @@ C_SOURCES := \
     mm/slab.c \
     mm/as.c \
     mm/uaccess.c \
+    mm/vma.c \
+    mm/fault.c \
     fs/vfs.c \
     fs/ramfs.c \
     fs/fd_table.c \
@@ -33,6 +35,10 @@ C_SOURCES := \
     drivers/hpet.c \
     drivers/tty.c \
     drivers/mouse.c \
+    drivers/pci.c \
+    drivers/block.c \
+    drivers/virtio/virtio.c \
+    drivers/virtio/virtio_blk.c \
     sched/thread.c \
     sched/sched.c \
     process/process.c \
@@ -114,6 +120,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/fs
 	mkdir -p $(BUILD_DIR)/sync
 	mkdir -p $(BUILD_DIR)/drivers
+	mkdir -p $(BUILD_DIR)/drivers/virtio
 	mkdir -p $(BUILD_DIR)/sched
 	mkdir -p $(BUILD_DIR)/process
 	mkdir -p $(BUILD_DIR)/syscall

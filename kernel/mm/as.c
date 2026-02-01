@@ -4,6 +4,7 @@
 #include "pmm.h"
 #include "slab.h"
 #include "vmm.h"
+#include "vma.h"
 #include "debug/debug.h"
 #include "include/types.h"
 
@@ -125,6 +126,7 @@ address_space_t *as_create(void) {
     as->cr3 = table_to_phys(new_pml4);
     as->ref_count = 1;
     as->user_pages = 0;
+    as->vmas = vma_list_create();
 
     DEBUG("Created address space: cr3=0x%llx", as->cr3);
 
@@ -133,6 +135,7 @@ address_space_t *as_create(void) {
 
 /*
  * Recursively free page tables for user space
+ * Handles COW pages by using reference counting
  */
 static void free_page_tables_recursive(page_table_t table, int level) {
     if (!table || level < 0) return;
@@ -142,8 +145,8 @@ static void free_page_tables_recursive(page_table_t table, int level) {
 
         /* Check for huge pages - don't recurse */
         if ((level == 2 || level == 1) && (table[i] & PTE_HUGE)) {
-            /* Free the huge page */
-            free_page(table[i] & PTE_ADDR_MASK);
+            /* Free the huge page (handles refcount) */
+            page_put_phys(table[i] & PTE_ADDR_MASK);
             continue;
         }
 
@@ -152,8 +155,8 @@ static void free_page_tables_recursive(page_table_t table, int level) {
             page_table_t child = pte_to_table(table[i]);
             free_page_tables_recursive(child, level - 1);
         } else {
-            /* Level 0 (PT): free the actual page */
-            free_page(table[i] & PTE_ADDR_MASK);
+            /* Level 0 (PT): free the actual page using refcount */
+            page_put_phys(table[i] & PTE_ADDR_MASK);
         }
     }
 
@@ -195,6 +198,11 @@ void as_destroy(address_space_t *as) {
 
     /* Free the PML4 itself */
     free_page(as->cr3 & PTE_ADDR_MASK);
+
+    /* Free VMA list */
+    if (as->vmas) {
+        vma_list_destroy(as->vmas);
+    }
 
     /* Free the structure */
     kfree(as);
@@ -463,13 +471,15 @@ int as_alloc_pages(address_space_t *as, uint64_t virt, uint64_t count, uint64_t 
 
 /*
  * Free and unmap a user page
+ * Handles COW pages by decrementing refcount instead of immediately freeing
  */
 void as_free_page(address_space_t *as, uint64_t virt) {
     if (!as) return;
 
     uint64_t phys = as_unmap_page(as, virt);
     if (phys) {
-        free_page(phys);
+        /* Use page_put_phys which handles refcount and frees if zero */
+        page_put_phys(phys);
         if (as->user_pages > 0) {
             as->user_pages--;
         }
@@ -477,7 +487,11 @@ void as_free_page(address_space_t *as, uint64_t virt) {
 }
 
 /*
- * Clone an address space (for fork)
+ * Clone an address space (for fork) - COW implementation
+ *
+ * Instead of copying all pages, we share them and mark as copy-on-write.
+ * Both parent and child get read-only mappings with the COW bit set.
+ * When either writes to a COW page, the page fault handler copies it.
  */
 address_space_t *as_clone(address_space_t *src) {
     if (!src) return NULL;
@@ -486,10 +500,18 @@ address_space_t *as_clone(address_space_t *src) {
     address_space_t *dst = as_create();
     if (!dst) return NULL;
 
+    /* Clone VMA list if present */
+    if (src->vmas) {
+        if (dst->vmas) {
+            vma_list_destroy(dst->vmas);
+        }
+        dst->vmas = vma_list_clone(src->vmas);
+    }
+
     /* Get source PML4 */
     page_table_t src_pml4 = (page_table_t)phys_to_virt(src->cr3 & PTE_ADDR_MASK);
 
-    /* Clone user space mappings (PML4 entries 0-255) */
+    /* Clone user space mappings (PML4 entries 0-255) with COW */
     for (int pml4_i = 0; pml4_i < KERNEL_PML4_START; pml4_i++) {
         if (!(src_pml4[pml4_i] & PTE_PRESENT)) continue;
 
@@ -500,8 +522,7 @@ address_space_t *as_clone(address_space_t *src) {
 
             /* Handle 1GB huge page */
             if (src_pdpt[pdpt_i] & PTE_HUGE) {
-                /* TODO: copy huge page */
-                WARN("as_clone: 1GB huge pages not yet supported");
+                WARN("as_clone: 1GB huge pages not yet supported for COW");
                 continue;
             }
 
@@ -512,8 +533,7 @@ address_space_t *as_clone(address_space_t *src) {
 
                 /* Handle 2MB huge page */
                 if (src_pd[pd_i] & PTE_HUGE) {
-                    /* TODO: copy huge page */
-                    WARN("as_clone: 2MB huge pages not yet supported");
+                    WARN("as_clone: 2MB huge pages not yet supported for COW");
                     continue;
                 }
 
@@ -528,28 +548,32 @@ address_space_t *as_clone(address_space_t *src) {
                                     ((uint64_t)pd_i << 21) |
                                     ((uint64_t)pt_i << 12);
 
-                    /* Get source physical address and flags */
-                    uint64_t src_phys = src_pt[pt_i] & PTE_ADDR_MASK;
-                    uint64_t flags = src_pt[pt_i] & ~PTE_ADDR_MASK;
+                    /* Get source physical address and original flags */
+                    uint64_t phys = src_pt[pt_i] & PTE_ADDR_MASK;
+                    uint64_t orig_flags = src_pt[pt_i] & ~PTE_ADDR_MASK;
 
-                    /* Allocate new page */
-                    uint64_t dst_phys = alloc_page();
-                    if (!dst_phys) {
-                        ERROR("as_clone: failed to allocate page");
-                        as_destroy(dst);
-                        return NULL;
+                    /* Increment reference count on the physical page */
+                    page_get_phys(phys);
+
+                    /*
+                     * Mark both parent and child as read-only + COW
+                     * if the page was originally writable
+                     */
+                    uint64_t cow_flags;
+                    if (orig_flags & PTE_WRITABLE) {
+                        /* Was writable: mark as read-only + COW */
+                        cow_flags = (orig_flags & ~PTE_WRITABLE) | PTE_COW;
+
+                        /* Update parent's PTE to also be COW */
+                        src_pt[pt_i] = (phys & PTE_ADDR_MASK) | cow_flags;
+                    } else {
+                        /* Already read-only: just share it */
+                        cow_flags = orig_flags;
                     }
 
-                    /* Copy page contents */
-                    void *src_page = phys_to_virt(src_phys);
-                    void *dst_page = phys_to_virt(dst_phys);
-                    for (uint64_t i = 0; i < PAGE_SIZE / sizeof(uint64_t); i++) {
-                        ((uint64_t*)dst_page)[i] = ((uint64_t*)src_page)[i];
-                    }
-
-                    /* Map in destination */
-                    if (as_map_page(dst, virt, dst_phys, flags) != 0) {
-                        free_page(dst_phys);
+                    /* Map in destination with same COW flags */
+                    if (as_map_page(dst, virt, phys, cow_flags) != 0) {
+                        page_put_phys(phys);  /* Undo refcount increment */
                         as_destroy(dst);
                         return NULL;
                     }
@@ -560,7 +584,10 @@ address_space_t *as_clone(address_space_t *src) {
         }
     }
 
-    DEBUG("Cloned address space: src cr3=0x%llx, dst cr3=0x%llx, pages=%llu",
+    /* Flush TLB for source (parent) since we modified its PTEs */
+    vmm_flush_tlb();
+
+    DEBUG("COW cloned address space: src cr3=0x%llx, dst cr3=0x%llx, pages=%llu",
           src->cr3, dst->cr3, dst->user_pages);
 
     return dst;

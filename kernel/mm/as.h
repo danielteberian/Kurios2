@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "vmm.h"
+#include "vma.h"
 
 /*
  * Address Space structure
@@ -17,6 +18,7 @@ typedef struct address_space {
     uint64_t cr3;           /* Physical address of PML4 */
     uint32_t ref_count;     /* Reference count (for shared mappings) */
     uint64_t user_pages;    /* Number of user-space pages allocated */
+    vma_list_t *vmas;       /* Virtual memory areas (for demand paging) */
 } address_space_t;
 
 /*

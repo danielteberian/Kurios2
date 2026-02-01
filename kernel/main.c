@@ -7,6 +7,8 @@
 #include "mm/vmm.h"
 #include "mm/slab.h"
 #include "mm/as.h"
+#include "mm/vma.h"
+#include "mm/fault.h"
 
 #ifdef TEST_MODE
 #include "tests/tests.h"
@@ -35,6 +37,9 @@
 #include "acpi/acpi.h"
 #include "apic/apic.h"
 #include "drivers/hpet.h"
+#include "drivers/pci.h"
+#include "drivers/block.h"
+#include "drivers/virtio/virtio.h"
 #include "initrd/initrd.h"
 #include "smp/percpu.h"
 #include "smp/smp.h"
@@ -137,6 +142,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize IDT and exception handlers */
     idt_init();
+
+    /* Initialize page fault handler (COW, demand paging) */
+    fault_init();
 
     /* Initialize GDB stub for remote debugging */
     gdb_init();
@@ -362,6 +370,9 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize slab allocator (kernel heap) */
     slab_init();
 
+    /* Initialize VMA subsystem (for demand paging) */
+    vma_init();
+
     /* Initialize ACPI table parsing */
     if (acpi_init(boot_info) != 0) {
         WARN("ACPI initialization failed - APIC info not available");
@@ -535,6 +546,15 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize TTY (/dev/console) */
     tty_init();
+
+    /* Initialize PCI subsystem */
+    pci_init();
+
+    /* Initialize block device layer */
+    block_init();
+
+    /* Initialize virtio devices (scans PCI for virtio-blk, etc.) */
+    virtio_init();
 
     /* Initialize PIT timer at 100 Hz (10ms tick) */
     pit_init(100);

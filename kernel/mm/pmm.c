@@ -423,6 +423,50 @@ uint64_t page_to_phys(page_t *page) {
 }
 
 /*
+ * Increment page reference count
+ */
+void page_get(page_t *page) {
+    if (!page) return;
+    page->refcount++;
+}
+
+/*
+ * Decrement page reference count, returns new count
+ * Does NOT automatically free the page - caller must check and free if needed
+ */
+uint32_t page_put(page_t *page) {
+    if (!page || page->refcount == 0) return 0;
+    return --page->refcount;
+}
+
+/*
+ * Increment refcount for physical address
+ */
+void page_get_phys(uint64_t phys) {
+    page_t *page = phys_to_page(phys);
+    if (page) {
+        page_get(page);
+    }
+}
+
+/*
+ * Decrement refcount for physical address
+ * Automatically frees the page if refcount reaches zero
+ * Returns new refcount
+ */
+uint32_t page_put_phys(uint64_t phys) {
+    page_t *page = phys_to_page(phys);
+    if (!page) return 0;
+
+    uint32_t new_count = page_put(page);
+    if (new_count == 0) {
+        /* Last reference - free the page */
+        free_page(phys);
+    }
+    return new_count;
+}
+
+/*
  * Debug: print PMM statistics
  */
 void pmm_dump_stats(void) {

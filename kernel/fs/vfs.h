@@ -115,6 +115,7 @@ struct node_ops {
                   vfs_node_t *new_parent, const char *new_name);
     int (*truncate)(vfs_node_t *node, uint64_t size);
     int (*stat)(vfs_node_t *node, vfs_stat_t *st);
+    int (*ioctl)(vfs_node_t *node, unsigned long request, void *arg);
 };
 
 /* VFS node (inode equivalent) */
@@ -196,6 +197,7 @@ int64_t vfs_seek(int fd, int64_t offset, int whence);
 int vfs_stat(const char *path, vfs_stat_t *st);
 int vfs_fstat(int fd, vfs_stat_t *st);
 int vfs_truncate(const char *path, uint64_t size);
+int vfs_ioctl(int fd, unsigned long request, void *arg);
 
 /*
  * File Descriptor Duplication
