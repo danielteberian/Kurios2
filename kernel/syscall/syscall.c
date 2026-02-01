@@ -238,6 +238,70 @@ static int64_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
 }
 
 /*
+ * sys_open - open a file
+ *
+ * @param pathname  Path to file (user pointer)
+ * @param flags     Open flags (O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, etc.)
+ * @param mode      File mode for O_CREAT (ignored for now)
+ * @return File descriptor on success, negative error on failure
+ */
+#define OPEN_PATH_MAX 256
+
+static int64_t sys_open(uint64_t pathname, uint64_t flags, uint64_t mode,
+                        uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)mode; (void)arg4; (void)arg5; (void)arg6;
+
+    DEBUG("sys_open(pathname=0x%llx, flags=0x%llx, mode=0x%llx)", pathname, flags, mode);
+
+    /* Copy path from user space */
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;  /* -EFAULT or -ENAMETOOLONG */
+    }
+
+    /* Call VFS open */
+    int fd = vfs_open(path, (uint32_t)flags);
+    if (fd < 0) {
+        DEBUG("sys_open: vfs_open failed: %d", fd);
+        /* Convert VFS error codes to syscall error codes */
+        return (int64_t)fd;
+    }
+
+    DEBUG("sys_open: opened '%s' as fd %d", path, fd);
+    return (int64_t)fd;
+}
+
+/*
+ * sys_close - close a file descriptor
+ *
+ * @param fd  File descriptor to close
+ * @return 0 on success, -EBADF if fd is invalid
+ */
+static int64_t sys_close(uint64_t fd, uint64_t arg2, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    DEBUG("sys_close(fd=%llu)", fd);
+
+    /* Don't allow closing stdin/stdout/stderr for now */
+    if (fd <= 2) {
+        DEBUG("sys_close: cannot close fd %llu (reserved)", fd);
+        return -EBADF;
+    }
+
+    /* Validate fd range */
+    if (fd >= VFS_MAX_FDS) {
+        return -EBADF;
+    }
+
+    /* Close via VFS - it handles the fd lookup and cleanup */
+    vfs_close((int)fd);
+
+    return 0;
+}
+
+/*
  * sys_getpid - get current process ID
  */
 static int64_t sys_getpid(uint64_t arg1, uint64_t arg2,
@@ -748,6 +812,8 @@ void syscall_init(void) {
     /* Register basic syscalls */
     syscall_register(SYS_READ, sys_read);
     syscall_register(SYS_WRITE, sys_write);
+    syscall_register(SYS_OPEN, sys_open);
+    syscall_register(SYS_CLOSE, sys_close);
     syscall_register(SYS_EXIT, sys_exit);
     syscall_register(SYS_GETPID, sys_getpid);
     syscall_register(SYS_GETPPID, sys_getppid);
