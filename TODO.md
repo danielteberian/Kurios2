@@ -38,18 +38,18 @@
 ### Filesystem
 17. [x] VFS layer (virtual filesystem abstraction) - COMPLETE
 18. [x] Ramfs (in-memory filesystem) - COMPLETE
-19. [ ] Initial ramdisk (initrd/initramfs)
+19. [x] Initial ramdisk (initrd/initramfs) - COMPLETE
 20. [ ] Filesystem driver (ext2, FAT32, or custom)
 
 ## In Progress
 - None
 
 ## Next Up
-- [ ] **Initial ramdisk** - initrd/initramfs support
 - [ ] **SMP support** - Multi-core CPU support (uses APIC)
 - [ ] **More syscalls** - open, read, close, mmap for user programs
 
 ## Completed Recently
+- [x] Initial ramdisk (initrd) - VERIFIED WORKING (CPIO newc parser, ramfs mounting)
 - [x] HPET timer - VERIFIED WORKING (100 MHz, 3 timers, 64-bit counter, delay functions)
 - [x] APIC setup - VERIFIED WORKING (Local APIC, I/O APIC, IRQ routing, PIC disabled)
 - [x] ACPI table parsing - VERIFIED WORKING (MADT, FADT, HPET; Local APIC, I/O APIC, IRQ overrides)

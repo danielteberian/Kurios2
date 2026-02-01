@@ -77,17 +77,43 @@ run-test: test _image-bios
 		-no-reboot \
 		-no-shutdown
 
+# Initrd file (can be overridden: make INITRD=path/to/initrd.cpio)
+INITRD ?=
+
 # Create BIOS bootable disk image (internal, no deps - used after test/debug builds)
+# Note: This target uses pre-built bootloader, so initrd will only work if
+# bootloader was built with correct KERNEL_SIZE and INITRD_SIZE values
 _image-bios:
 	@echo "Creating BIOS bootable disk image..."
 	@mkdir -p $(BUILD_DIR)
-	# Create disk image (1.44MB floppy size for testing)
-	dd if=/dev/zero of=$(BUILD_DIR)/kurios2-bios.img bs=512 count=2880 2>/dev/null
+	# Create disk image (4MB for room for kernel + initrd)
+	dd if=/dev/zero of=$(BUILD_DIR)/kurios2-bios.img bs=512 count=8192 2>/dev/null
 	# Write bootloader (stage1 + stage2)
 	dd if=$(BUILD_DIR)/boot/bios_boot.bin of=$(BUILD_DIR)/kurios2-bios.img conv=notrunc 2>/dev/null
 	# Write kernel starting at sector 34 (after stage1 + stage2)
 	dd if=$(BUILD_DIR)/kernel/kernel.bin of=$(BUILD_DIR)/kurios2-bios.img bs=512 seek=34 conv=notrunc 2>/dev/null
+	# Write initrd after kernel (if provided)
+	@if [ -n "$(INITRD)" ] && [ -f "$(INITRD)" ]; then \
+		KERNEL_SIZE=$$(stat -c%s $(BUILD_DIR)/kernel/kernel.bin); \
+		KERNEL_SECTORS=$$(( ($$KERNEL_SIZE + 511) / 512 )); \
+		INITRD_LBA=$$(( 34 + $$KERNEL_SECTORS )); \
+		echo "Writing initrd at sector $$INITRD_LBA..."; \
+		dd if=$(INITRD) of=$(BUILD_DIR)/kurios2-bios.img bs=512 seek=$$INITRD_LBA conv=notrunc 2>/dev/null; \
+	fi
 	@echo "BIOS image: $(BUILD_DIR)/kurios2-bios.img"
+
+# Build BIOS image with initrd support (rebuilds bootloader with correct sizes)
+image-bios-initrd: kernel
+	@if [ -z "$(INITRD)" ] || [ ! -f "$(INITRD)" ]; then \
+		echo "Error: INITRD not specified or file not found"; \
+		echo "Usage: make INITRD=path/to/initrd.cpio image-bios-initrd"; \
+		exit 1; \
+	fi
+	@KERNEL_SIZE=$$(stat -c%s $(BUILD_DIR)/kernel/kernel.bin); \
+	INITRD_SIZE=$$(stat -c%s $(INITRD)); \
+	echo "Building bootloader with KERNEL_SIZE=$$KERNEL_SIZE INITRD_SIZE=$$INITRD_SIZE"; \
+	$(MAKE) -C boot KERNEL_SIZE=$$KERNEL_SIZE INITRD_SIZE=$$INITRD_SIZE
+	$(MAKE) INITRD=$(INITRD) _image-bios
 
 # Create BIOS bootable disk image (public, with deps)
 image-bios: boot kernel _image-bios

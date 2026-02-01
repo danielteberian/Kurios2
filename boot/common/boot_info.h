@@ -13,6 +13,7 @@
 #define BOOT_FLAG_UEFI        (1 << 1)
 #define BOOT_FLAG_FRAMEBUFFER (1 << 2)
 #define BOOT_FLAG_ACPI        (1 << 3)
+#define BOOT_FLAG_INITRD      (1 << 4)
 
 /* Memory map types (E820 compatible) */
 #define MMAP_TYPE_USABLE       1
@@ -54,6 +55,8 @@ typedef struct {
     uint64_t kernel_size;    /* Kernel size in bytes */
     uint64_t cmdline;        /* Command line string (or 0) */
     uint64_t boot_drive;     /* Boot drive number */
+    uint64_t initrd_start;   /* Initial ramdisk physical address (or 0) */
+    uint64_t initrd_size;    /* Initial ramdisk size in bytes (or 0) */
 } __attribute__((packed)) BootInfo;
 
 #endif /* BOOT_INFO_H */

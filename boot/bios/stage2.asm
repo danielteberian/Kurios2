@@ -59,6 +59,21 @@ stage2_entry:
     mov si, msg_kernel_ok
     call print_string
 
+    ; Load initrd from disk (if present)
+    call load_initrd
+    test ax, ax
+    jz .no_initrd
+
+    mov si, msg_initrd_ok
+    call print_string
+    jmp .continue_boot
+
+.no_initrd:
+    mov si, msg_no_initrd
+    call print_string
+
+.continue_boot:
+
     ; DEBUG: Print 'B' for before boot_info
     mov ax, 0x0E42
     xor bx, bx
@@ -537,9 +552,104 @@ load_kernel:
     ret
 
 ; -----------------------------------------------------------------------------
+; Load initrd from disk (follows kernel)
+; Returns: AX = 1 if loaded, 0 if no initrd or error
+; Initrd is loaded at physical address INITRD_LOAD_ADDR (0x400000 = 4MB)
+; -----------------------------------------------------------------------------
+; Initrd stays in temp buffer at 0x20000 - no high memory copy needed
+; The kernel can access it via identity mapping
+INITRD_LOAD_ADDR    equ 0x20000     ; Initrd stays at temp buffer
+
+load_initrd:
+    ; Check if initrd_size is set (non-zero)
+    mov eax, [initrd_size]
+    test eax, eax
+    jz .no_initrd           ; No initrd configured
+
+    push es
+    push bx
+    push cx
+    push dx
+
+    ; Calculate initrd sectors needed
+    add eax, 511            ; Round up
+    shr eax, 9              ; Divide by 512
+    mov [sectors_remaining], ax
+
+    ; Calculate initrd LBA: 34 + (kernel_size / 512)
+    mov eax, [kernel_size]
+    add eax, 511
+    shr eax, 9              ; Kernel sectors
+    add eax, 34             ; Add stage1+stage2 sectors
+    mov [disk_packet_lba], eax
+    mov dword [disk_packet_lba+4], 0
+
+    ; Use temporary buffer at 0x20000, then copy to high memory
+    mov word [disk_packet_segment], 0x2000
+    mov word [disk_packet_sectors], 64
+
+.read_loop:
+    mov ax, [sectors_remaining]
+    test ax, ax
+    jz .read_done
+
+    ; Cap at 64 sectors per read
+    cmp ax, 64
+    jbe .use_remaining
+    mov ax, 64
+.use_remaining:
+    mov [disk_packet_sectors], ax
+    push ax
+
+    ; BIOS extended read
+    mov si, disk_packet
+    mov ah, 0x42
+    mov dl, [boot_drive]
+    int 0x13
+    jc .error_pop
+
+    ; Update remaining
+    pop ax
+    sub [sectors_remaining], ax
+
+    ; Advance LBA
+    movzx eax, ax
+    add [disk_packet_lba], eax
+
+    ; Advance segment
+    shl ax, 5
+    add [disk_packet_segment], ax
+
+    jmp .read_loop
+
+.read_done:
+    ; Initrd is already at 0x20000 (temp buffer) - no copy needed!
+    ; Just record where it is
+    mov dword [initrd_phys_addr], INITRD_LOAD_ADDR
+
+    pop dx
+    pop cx
+    pop bx
+    pop es
+    mov ax, 1
+    ret
+
+.error_pop:
+    pop ax
+.error:
+    pop dx
+    pop cx
+    pop bx
+    pop es
+.no_initrd:
+    mov dword [initrd_phys_addr], 0
+    xor ax, ax
+    ret
+
+; -----------------------------------------------------------------------------
 ; Enter unreal mode (big real mode)
 ; Allows accessing memory above 1MB in real mode
-; After return: DS has 4GB limit with base=0, ES unchanged
+; After return: DS and ES have 4GB limit with base=0
 ; -----------------------------------------------------------------------------
 enter_unreal_mode:
     cli
@@ -550,16 +660,17 @@ enter_unreal_mode:
     or al, 1
     mov cr0, eax
 
-    ; Load DS with 4GB data selector - this caches the 4GB limit
+    ; Load DS and ES with 4GB data selector - this caches the 4GB limit
     mov bx, 0x10            ; Data segment selector (4GB limit, base=0)
     mov ds, bx
+    mov es, bx              ; Also set ES for REP MOVSD destination
 
-    ; Exit protected mode - the DS descriptor cache keeps 4GB limit!
+    ; Exit protected mode - the descriptor caches keep 4GB limit!
     and al, 0xFE
     mov cr0, eax
 
-    ; Now DS register = 0x10, but descriptor cache has 4GB limit, base=0
-    ; We do NOT reload DS here - that would destroy the 4GB limit
+    ; Now DS/ES registers = 0x10, but descriptor caches have 4GB limit, base=0
+    ; We do NOT reload DS/ES here - that would destroy the 4GB limit
 
     sti
     ret
@@ -620,6 +731,20 @@ prepare_boot_info:
     jne .no_fb
     or dword [es:di + BOOT_INFO_FLAGS], BOOT_FLAG_FRAMEBUFFER
 .no_fb:
+
+    ; Initial ramdisk (initrd)
+    mov eax, [initrd_phys_addr]
+    mov [es:di + BOOT_INFO_INITRD_START], eax
+    mov dword [es:di + BOOT_INFO_INITRD_START + 4], 0
+    mov eax, [initrd_size]
+    mov [es:di + BOOT_INFO_INITRD_SIZE], eax
+    mov dword [es:di + BOOT_INFO_INITRD_SIZE + 4], 0
+
+    ; Set initrd flag if we loaded one
+    cmp dword [initrd_phys_addr], 0
+    je .no_initrd_flag
+    or dword [es:di + BOOT_INFO_FLAGS], BOOT_FLAG_INITRD
+.no_initrd_flag:
 
     pop di
     pop es
@@ -968,7 +1093,16 @@ sectors_remaining:  dw 0
 boot_drive:         db 0
 has_framebuffer:    db 0
 memory_map_count:   dw 0
+%ifdef KERNEL_SIZE_OVERRIDE
+kernel_size:        dd KERNEL_SIZE_OVERRIDE
+%else
 kernel_size:        dd 0x20000      ; 128KB default - room for kernel growth
+%endif
+%ifndef INITRD_SIZE
+%define INITRD_SIZE 0
+%endif
+initrd_size:        dd INITRD_SIZE  ; Initial ramdisk size (0 = no initrd)
+initrd_phys_addr:   dd 0            ; Where initrd was loaded in physical memory
 
 ; Far jump targets (6 bytes each: 4 byte offset + 2 byte segment)
 pm_jump_target:     dd 0            ; 32-bit offset
@@ -989,6 +1123,8 @@ msg_mmap_ok:        db "Memory map OK", 0x0D, 0x0A, 0
 msg_mmap_err:       db "Memory map failed!", 0x0D, 0x0A, 0
 msg_kernel_ok:      db "Kernel loaded", 0x0D, 0x0A, 0
 msg_kernel_err:     db "Kernel load failed!", 0x0D, 0x0A, 0
+msg_initrd_ok:      db "Initrd loaded", 0x0D, 0x0A, 0
+msg_no_initrd:      db "No initrd", 0x0D, 0x0A, 0
 msg_debug_d:        db "D", 0
 msg_debug_v:        db "V", 0
 

@@ -32,6 +32,7 @@
 #include "acpi/acpi.h"
 #include "apic/apic.h"
 #include "drivers/hpet.h"
+#include "initrd/initrd.h"
 
 #ifdef DEBUG_TESTS
 /* Test global constructor */
@@ -163,7 +164,15 @@ void kernel_main(BootInfo *boot_info) {
     if (boot_info->flags & BOOT_FLAG_UEFI) kprintf(" [UEFI]");
     if (boot_info->flags & BOOT_FLAG_FRAMEBUFFER) kprintf(" [FB]");
     if (boot_info->flags & BOOT_FLAG_ACPI) kprintf(" [ACPI]");
+    if (boot_info->flags & BOOT_FLAG_INITRD) kprintf(" [INITRD]");
     kprintf("\n");
+    kprintf("  Initrd start:   0x%llx\n", boot_info->initrd_start);
+    kprintf("  Initrd size:    %llu bytes\n", boot_info->initrd_size);
+    /* Debug: raw bytes at boot_info+0x58 */
+    uint8_t *raw = (uint8_t *)boot_info;
+    kprintf("  Raw at 0x58:    %02x %02x %02x %02x %02x %02x %02x %02x\n",
+            raw[0x58], raw[0x59], raw[0x5a], raw[0x5b],
+            raw[0x5c], raw[0x5d], raw[0x5e], raw[0x5f]);
 
     /* Print kernel location */
     kprintf("\n=== Kernel Location ===\n");
@@ -375,6 +384,9 @@ void kernel_main(BootInfo *boot_info) {
     as_run_tests();
 #endif
 
+    /* Initialize initrd (if present) - must be before VFS for mounting */
+    initrd_init(boot_info);
+
     /* Initialize VFS and ramfs */
     vfs_init();
     ramfs_init();
@@ -385,6 +397,20 @@ void kernel_main(BootInfo *boot_info) {
     } else {
         ERROR("Failed to mount ramfs at /");
     }
+
+    /* Mount initrd contents to ramfs (if initrd is present) */
+    if (initrd_available()) {
+        if (initrd_mount() == 0) {
+            INFO("Initrd contents mounted to ramfs");
+        } else {
+            WARN("Failed to mount initrd contents");
+        }
+    }
+
+#ifdef DEBUG_TESTS
+    /* Run initrd tests */
+    initrd_run_tests();
+#endif
 
     /* VFS Tests */
     kprintf("\n=== VFS Tests ===\n");

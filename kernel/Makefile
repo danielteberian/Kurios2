@@ -36,7 +36,8 @@ C_SOURCES := \
     user/user_entry.c \
     loader/elf_loader.c \
     acpi/acpi.c \
-    apic/apic.c
+    apic/apic.c \
+    initrd/initrd.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
@@ -113,6 +114,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/loader
 	mkdir -p $(BUILD_DIR)/acpi
 	mkdir -p $(BUILD_DIR)/apic
+	mkdir -p $(BUILD_DIR)/initrd
 
 # Ensure directories exist before compiling
 $(BUILD_DIR)/debug/%.o: | $(BUILD_DIR)

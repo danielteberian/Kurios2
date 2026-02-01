@@ -191,6 +191,24 @@ void pmm_init(void *boot_info_ptr) {
     }
 
     /*
+     * Mark initrd pages as reserved (if present)
+     */
+    if ((boot_info->flags & BOOT_FLAG_INITRD) &&
+        boot_info->initrd_start != 0 && boot_info->initrd_size != 0) {
+        uint64_t initrd_start_pfn = phys_to_pfn(ALIGN_DOWN(boot_info->initrd_start, PAGE_SIZE));
+        uint64_t initrd_end_pfn = phys_to_pfn(ALIGN_UP(boot_info->initrd_start + boot_info->initrd_size, PAGE_SIZE));
+
+        INFO("Initrd pages: PFN %llu - %llu (0x%llx - 0x%llx)",
+              initrd_start_pfn, initrd_end_pfn,
+              boot_info->initrd_start, boot_info->initrd_start + boot_info->initrd_size);
+
+        for (uint64_t pfn = initrd_start_pfn; pfn < initrd_end_pfn; pfn++) {
+            pages[pfn].flags = PAGE_FLAG_RESERVED;
+            mem_info.reserved_pages++;
+        }
+    }
+
+    /*
      * Third pass: add free pages to buddy allocator
      * We add pages in largest possible blocks for efficiency
      */

@@ -14,8 +14,14 @@ BIOS_STAGE2 := $(BUILD_DIR)/stage2.bin
 BIOS_BOOT := $(BUILD_DIR)/bios_boot.bin
 UEFI_BOOT := $(BUILD_DIR)/BOOTX64.EFI
 
+# Initrd size (set to non-zero to enable initrd loading)
+INITRD_SIZE ?= 0
+
+# Kernel size - defaults to 128KB, can be overridden
+KERNEL_SIZE ?= 0x20000
+
 # NASM flags
-NASM_FLAGS := -f bin -I ../
+NASM_FLAGS := -f bin -I ../ -DINITRD_SIZE=$(INITRD_SIZE) -DKERNEL_SIZE_OVERRIDE=$(KERNEL_SIZE)
 
 # GCC flags for UEFI (compile as position-independent)
 UEFI_CFLAGS := \

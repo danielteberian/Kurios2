@@ -13,7 +13,9 @@ BOOT_INFO_KERNEL_PHYS   equ 0x38    ; Kernel physical load address
 BOOT_INFO_KERNEL_SIZE   equ 0x40    ; Kernel size in bytes
 BOOT_INFO_CMDLINE       equ 0x48    ; Pointer to command line string
 BOOT_INFO_BOOT_DRIVE    equ 0x50    ; Boot drive number
-BOOT_INFO_SIZE          equ 0x58    ; Total structure size
+BOOT_INFO_INITRD_START  equ 0x58    ; Initial ramdisk physical address
+BOOT_INFO_INITRD_SIZE   equ 0x60    ; Initial ramdisk size in bytes
+BOOT_INFO_SIZE          equ 0x68    ; Total structure size
 
 ; Magic number
 KURIOS_BOOT_MAGIC       equ 0x4B55524953  ; "KURIS" in ASCII
@@ -26,6 +28,7 @@ BOOT_FLAG_BIOS          equ (1 << 0)    ; Booted via BIOS
 BOOT_FLAG_UEFI          equ (1 << 1)    ; Booted via UEFI
 BOOT_FLAG_FRAMEBUFFER   equ (1 << 2)    ; Framebuffer available
 BOOT_FLAG_ACPI          equ (1 << 3)    ; ACPI tables found
+BOOT_FLAG_INITRD        equ (1 << 4)    ; Initial ramdisk loaded
 
 ; Memory map entry structure
 ; Compatible with E820 format

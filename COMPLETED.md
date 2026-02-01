@@ -223,6 +223,26 @@
 - [2026-01-31] Verified: All 8 APIC tests pass
 - [2026-01-31] Verified: Timer/keyboard interrupts work via APIC
 
+### Initial Ramdisk (Initrd) [VERIFIED]
+- [2026-01-31] Initrd subsystem (`kernel/initrd/initrd.c`, `kernel/initrd/initrd.h`)
+  - CPIO newc format parser (magic "070701")
+  - Bootloader loads initrd from disk to 0x20000 temp buffer
+  - BootInfo passes initrd_start and initrd_size to kernel
+  - initrd_init() validates CPIO magic, counts entries
+  - initrd_mount() creates files/directories in ramfs
+  - initrd_find() searches for file by path
+  - PMM reserves initrd pages to prevent allocation
+- [2026-01-31] Bootloader support (`boot/bios/stage2.asm`)
+  - INITRD_SIZE build-time configuration
+  - Calculates initrd LBA from kernel size
+  - Reads initrd to temp buffer using INT 13h
+  - BOOT_FLAG_INITRD indicates initrd presence
+- [2026-01-31] Makefile support
+  - `make INITRD=path/to/initrd.cpio image-bios-initrd`
+  - Automatically sets KERNEL_SIZE and INITRD_SIZE for bootloader
+  - Writes initrd after kernel in disk image
+- [2026-01-31] Verified: 6 files from initrd mounted to ramfs (/bin/init, /etc/config, /etc/hostname)
+
 ### ACPI Table Parsing [VERIFIED]
 - [2026-01-31] ACPI subsystem (`kernel/acpi/acpi.c`, `kernel/acpi/acpi.h`)
   - RSDP discovery (boot-provided hint, EBDA, BIOS ROM search)
