@@ -75,16 +75,27 @@
 
 /*
  * ICR (Interrupt Command Register) bits
+ *
+ * Bits 8-10:  Delivery Mode (000=Fixed, 101=INIT, 110=Startup)
+ * Bit 11:     Destination Mode (0=Physical, 1=Logical)
+ * Bit 12:     Delivery Status (0=Idle, 1=Pending) - read only
+ * Bit 14:     Level (0=De-assert, 1=Assert) - for INIT IPI
+ * Bit 15:     Trigger Mode (0=Edge, 1=Level)
+ * Bits 18-19: Destination Shorthand
  */
-#define LAPIC_ICR_BUSY          (1 << 12)   /* Delivery status */
+#define LAPIC_ICR_BUSY          (1 << 12)   /* Delivery status (read-only) */
 #define LAPIC_ICR_INIT          (5 << 8)    /* INIT IPI */
 #define LAPIC_ICR_STARTUP       (6 << 8)    /* Startup IPI */
-#define LAPIC_ICR_LEVEL         (1 << 14)   /* Level (1) vs edge (0) */
-#define LAPIC_ICR_ASSERT        (1 << 14)   /* Assert (used with INIT) */
-#define LAPIC_ICR_DEASSERT      (0 << 14)   /* Deassert */
+#define LAPIC_ICR_ASSERT        (1 << 14)   /* Level: Assert */
+#define LAPIC_ICR_DEASSERT      (0 << 14)   /* Level: De-assert */
+#define LAPIC_ICR_TRIGGER_LEVEL (1 << 15)   /* Trigger mode: Level */
+#define LAPIC_ICR_TRIGGER_EDGE  (0 << 15)   /* Trigger mode: Edge */
 #define LAPIC_ICR_DEST_SELF     (1 << 18)   /* Self */
 #define LAPIC_ICR_DEST_ALL      (2 << 18)   /* All including self */
 #define LAPIC_ICR_DEST_OTHERS   (3 << 18)   /* All excluding self */
+
+/* Backwards compatibility - LEVEL was conflated with ASSERT */
+#define LAPIC_ICR_LEVEL         LAPIC_ICR_ASSERT
 
 /*
  * I/O APIC Register Addresses
@@ -186,6 +197,31 @@ void ipi_send_all_others(uint8_t vector);
 
 /* Send IPI to self */
 void ipi_send_self(uint8_t vector);
+
+/*
+ * LAPIC Timer functions
+ */
+
+/* Vector for LAPIC timer interrupt */
+#define LAPIC_TIMER_VECTOR  48
+
+/* Initialize LAPIC timer (must be called after hpet_init for calibration) */
+void lapic_timer_init(void);
+
+/* Initialize LAPIC timer for an AP */
+void lapic_timer_init_ap(void);
+
+/* Start LAPIC timer in periodic mode with specified frequency (Hz) */
+void lapic_timer_start(uint32_t hz);
+
+/* Stop LAPIC timer */
+void lapic_timer_stop(void);
+
+/* Check if LAPIC timer is running */
+bool lapic_timer_is_running(void);
+
+/* Get LAPIC timer frequency (ticks per second) */
+uint32_t lapic_timer_get_frequency(void);
 
 #ifdef DEBUG_TESTS
 /* Run APIC tests */

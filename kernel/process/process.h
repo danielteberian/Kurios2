@@ -6,8 +6,11 @@
 #include <stdbool.h>
 #include "../sched/thread.h"
 
-/* Forward declaration */
+/* Forward declarations */
 struct fd_table;
+
+/* Forward declaration for signal state */
+typedef struct signal_state signal_state_t;
 
 /* Process ID type */
 typedef uint32_t pid_t;
@@ -66,6 +69,9 @@ typedef struct process {
     /* File descriptors */
     struct fd_table *fd_table;      /* Per-process file descriptor table */
 
+    /* Signal handling */
+    signal_state_t *signals;        /* Per-process signal state */
+
     /* User-space entry (for new processes) */
     uint64_t entry_point;           /* User-space entry address */
     uint64_t user_stack;            /* User-space stack pointer */
@@ -123,6 +129,28 @@ void process_set_current(process_t *proc);
  * @param exit_code Exit status code
  */
 void process_exit(process_t *proc, int exit_code);
+
+/*
+ * Find a zombie child process
+ * Used by waitpid to find children that have exited.
+ *
+ * @param parent_pid  Parent process ID
+ * @param child_pid   Specific child PID to wait for, or -1 for any child
+ * @param status      Pointer to store exit status (can be NULL)
+ * @return Child process that was found, or NULL if none
+ *
+ * Note: The returned process is still in the process table.
+ * Caller must call process_destroy() to reap it after handling.
+ */
+process_t *process_find_zombie_child(pid_t parent_pid, pid_t child_pid);
+
+/*
+ * Check if a process has any children (zombie or alive)
+ *
+ * @param parent_pid  Parent process ID
+ * @return true if process has children, false otherwise
+ */
+bool process_has_children(pid_t parent_pid);
 
 /*
  * Get process state as string (for debugging)

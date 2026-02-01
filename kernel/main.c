@@ -27,6 +27,7 @@
 #include "debug/gdb_stub.h"
 #include "fs/vfs.h"
 #include "fs/ramfs.h"
+#include "fs/procfs.h"
 #include "lib/string.h"
 #include "boot_info.h"
 #include "acpi/acpi.h"
@@ -36,6 +37,7 @@
 #include "smp/percpu.h"
 #include "smp/smp.h"
 #include "smp/tlb.h"
+#include "signal/signal.h"
 
 #ifdef DEBUG_TESTS
 /* Test global constructor */
@@ -373,6 +375,9 @@ void kernel_main(BootInfo *boot_info) {
         DEBUG("HPET not available - using PIT for timing");
     }
 
+    /* Initialize LAPIC timer (uses HPET for calibration) */
+    lapic_timer_init();
+
     /* Initialize per-CPU data for BSP (before SMP) */
     percpu_init_bsp();
 
@@ -426,9 +431,19 @@ void kernel_main(BootInfo *boot_info) {
         }
     }
 
+    /* Mount procfs at /proc */
+    if (procfs_mount() == VFS_OK) {
+        INFO("Mounted procfs at /proc");
+    } else {
+        WARN("Failed to mount procfs");
+    }
+
 #ifdef DEBUG_TESTS
     /* Run initrd tests */
     initrd_run_tests();
+
+    /* Run procfs tests */
+    procfs_run_tests();
 #endif
 
     /* VFS Tests */
@@ -522,6 +537,9 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize process management */
     process_init();
 
+    /* Initialize signal subsystem */
+    signal_init();
+
     /* Initialize syscall infrastructure */
     syscall_init();
 
@@ -545,6 +563,9 @@ void kernel_main(BootInfo *boot_info) {
     } else {
         ERROR("Failed to create demo threads");
     }
+
+    /* Start LAPIC timer for per-CPU scheduling (100 Hz) */
+    lapic_timer_start(100);
 
     /* Start the scheduler */
     sched_start();

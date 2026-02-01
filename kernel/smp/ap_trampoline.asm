@@ -24,6 +24,11 @@ section .text
 global ap_trampoline_start
 global ap_trampoline_end
 
+; VGA debug helper: write character to VGA memory
+; In 16-bit mode: writes to 0xB8000 + offset
+%define VGA_BASE 0xB8000
+%define VGA_ATTR 0x4F    ; White on red - very visible
+
 ; 16-bit real mode code
 ap_trampoline_start:
 [BITS 16]
@@ -36,6 +41,12 @@ ap_trampoline_start:
     mov es, ax
     mov ss, ax
     mov sp, 0x7000      ; Temporary stack just below trampoline
+
+    ; DEBUG: Write '1' to VGA memory to show we started (top-right corner)
+    ; VGA segment = 0xB800, offset = 158 (column 79 of row 0)
+    mov ax, 0xB800
+    mov gs, ax
+    mov word [gs:158], 0x4F31    ; '1' with white on red
 
     ; Load a temporary GDT for protected mode transition
     lgdt [ap_gdt_ptr - ap_trampoline_start + AP_TRAMPOLINE_ADDR]
@@ -57,6 +68,9 @@ ap_trampoline_start:
     mov ss, ax
     mov fs, ax
     mov gs, ax
+
+    ; DEBUG: Write '2' to VGA memory (32-bit mode reached)
+    mov dword [0xB8000 + 156], 0x4F324F32    ; '22' at position 78-79
 
     ; Load all parameters NOW while we can still access physical memory directly
     ; Save them in callee-saved registers that will survive the mode switch
@@ -108,6 +122,10 @@ ap_trampoline_start:
     mov gs, ax
     mov ss, ax
 
+    ; DEBUG: Write '3' to VGA memory (64-bit mode reached)
+    ; VGA is at physical 0xB8000, identity-mapped
+    mov dword [0xB8000 + 152], 0x4F334F33    ; '33' at position 76-77
+
     ; Reconstruct the 64-bit stack pointer from saved values
     ; rdi holds low 32 bits, rbp holds high 32 bits
     mov rsp, rbp
@@ -121,6 +139,9 @@ ap_trampoline_start:
     ; Load per-CPU data pointer from 0x7F10 into RDI (first argument)
     ; Note: We're relying on identity mapping working here
     mov rdi, [0x7F10]
+
+    ; DEBUG: Write '4' to VGA memory (about to jump to C)
+    mov dword [0xB8000 + 148], 0x4F344F34    ; '44' at position 74-75
 
     ; Load entry point from 0x7F18
     mov rax, [0x7F18]

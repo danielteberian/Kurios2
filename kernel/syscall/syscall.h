@@ -22,7 +22,21 @@
 #define SYS_FORK        57
 #define SYS_EXECVE      59
 #define SYS_EXIT        60
+#define SYS_WAIT4       61      /* waitpid - wait for child process */
+#define SYS_KILL        62      /* kill - send signal */
 #define SYS_GETPPID     110
+
+/* waitpid options */
+#define WNOHANG         1       /* Don't block waiting */
+#define WUNTRACED       2       /* Also return stopped children */
+
+/* waitpid macros - extract info from status */
+#define WIFEXITED(status)       (((status) & 0x7f) == 0)
+#define WEXITSTATUS(status)     (((status) >> 8) & 0xff)
+#define WIFSIGNALED(status)     (((status) & 0x7f) != 0 && ((status) & 0x7f) != 0x7f)
+#define WTERMSIG(status)        ((status) & 0x7f)
+#define WIFSTOPPED(status)      (((status) & 0xff) == 0x7f)
+#define WSTOPSIG(status)        (((status) >> 8) & 0xff)
 
 /* Maximum syscall number */
 #define SYS_MAX         256

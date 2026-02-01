@@ -212,10 +212,22 @@ void smp_register_ipi_handlers(void)
 }
 
 /*
+ * Debug: Write to VGA memory to show progress
+ */
+static void vga_debug_char(int pos, char c)
+{
+    volatile uint16_t *vga = (volatile uint16_t *)0xB8000;
+    vga[pos] = (0x4F << 8) | c;  /* White on red */
+}
+
+/*
  * AP entry point - called from ap_trampoline.asm
  */
 void ap_entry(percpu_data_t *percpu)
 {
+    /* DEBUG: Write '5' to VGA - we made it to C code! */
+    vga_debug_char(70, '5');
+
     /* Set up GS_BASE for per-CPU access */
     write_msr(MSR_GS_BASE, (uint64_t)percpu);
 
@@ -228,6 +240,9 @@ void ap_entry(percpu_data_t *percpu)
 
     /* Initialize Local APIC for this AP */
     lapic_init_ap();
+
+    /* Initialize LAPIC timer for this AP */
+    lapic_timer_init_ap();
 
     /* Initialize per-CPU scheduler */
     sched_init_cpu(percpu);
@@ -250,6 +265,9 @@ void ap_entry(percpu_data_t *percpu)
 
     /* Enable interrupts */
     sti();
+
+    /* Start LAPIC timer for scheduling (100 Hz) */
+    lapic_timer_start(100);
 
     /* Enter the idle loop - scheduler will take over */
     DEBUG("SMP: CPU %u entering idle loop", percpu->cpu_id);

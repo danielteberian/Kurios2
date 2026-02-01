@@ -11,6 +11,7 @@
 #include "../arch/x86_64/cpu.h"
 #include "../lib/string.h"
 #include "../fs/fd_table.h"
+#include "../signal/signal.h"
 
 /* Kernel stack size: 16KB (4 pages) - same as thread stacks */
 #define KERNEL_STACK_SIZE   (16 * 1024)
@@ -117,6 +118,11 @@ void process_init(void) {
     if (!kernel_proc->fd_table) {
         panic("Failed to create fd table for kernel process");
     }
+    kernel_proc->signals = kmalloc(sizeof(signal_state_t));
+    if (!kernel_proc->signals) {
+        panic("Failed to create signal state for kernel process");
+    }
+    signal_state_init(kernel_proc->signals);
     kernel_proc->entry_point = 0;
     kernel_proc->user_stack = 0;
     copy_process_name(kernel_proc, "kernel");
@@ -183,6 +189,16 @@ process_t *process_create(const char *name) {
         ERROR("Failed to create fd table for process");
         return NULL;
     }
+    proc->signals = kmalloc(sizeof(signal_state_t));
+    if (!proc->signals) {
+        fd_table_destroy(proc->fd_table);
+        free_pages(stack_phys, KERNEL_STACK_ORDER);
+        kfree(proc);
+        spin_unlock_irqrestore(&process_lock, flags);
+        ERROR("Failed to create signal state for process");
+        return NULL;
+    }
+    signal_state_init(proc->signals);
     proc->entry_point = 0;
     proc->user_stack = 0;
     copy_process_name(proc, name);
@@ -227,6 +243,12 @@ void process_destroy(process_t *proc) {
     if (proc->fd_table) {
         fd_table_destroy(proc->fd_table);
         proc->fd_table = NULL;
+    }
+
+    /* Free signal state */
+    if (proc->signals) {
+        kfree(proc->signals);
+        proc->signals = NULL;
     }
 
     /* TODO: Free user address space when implemented */
@@ -285,6 +307,58 @@ void process_exit(process_t *proc, int exit_code) {
 
     DEBUG("Process '%s' PID %u exited with code %d",
           proc->name, proc->pid, exit_code);
+}
+
+/*
+ * Find a zombie child process
+ */
+process_t *process_find_zombie_child(pid_t parent_pid, pid_t child_pid) {
+    uint64_t flags = spin_lock_irqsave(&process_lock);
+
+    for (uint32_t i = 1; i < MAX_PROCESSES; i++) {  /* Skip PID 0 (kernel) */
+        process_t *proc = process_table[i];
+        if (!proc) {
+            continue;
+        }
+
+        /* Check if this is a child of the specified parent */
+        if (proc->parent_pid != parent_pid) {
+            continue;
+        }
+
+        /* If child_pid is specified, only match that specific child */
+        if (child_pid != (pid_t)-1 && proc->pid != child_pid) {
+            continue;
+        }
+
+        /* Check if child is a zombie */
+        if (proc->state == PROC_ZOMBIE) {
+            spin_unlock_irqrestore(&process_lock, flags);
+            return proc;
+        }
+    }
+
+    spin_unlock_irqrestore(&process_lock, flags);
+    return NULL;
+}
+
+/*
+ * Check if a process has any children
+ */
+bool process_has_children(pid_t parent_pid) {
+    uint64_t flags = spin_lock_irqsave(&process_lock);
+
+    for (uint32_t i = 1; i < MAX_PROCESSES; i++) {  /* Skip PID 0 */
+        process_t *proc = process_table[i];
+        if (proc && proc->parent_pid == parent_pid &&
+            proc->state != PROC_DEAD && proc->state != PROC_UNUSED) {
+            spin_unlock_irqrestore(&process_lock, flags);
+            return true;
+        }
+    }
+
+    spin_unlock_irqrestore(&process_lock, flags);
+    return false;
 }
 
 /*

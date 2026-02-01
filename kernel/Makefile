@@ -25,6 +25,7 @@ C_SOURCES := \
     fs/vfs.c \
     fs/ramfs.c \
     fs/fd_table.c \
+    fs/procfs.c \
     drivers/keyboard.c \
     drivers/vga.c \
     drivers/pit.c \
@@ -40,7 +41,8 @@ C_SOURCES := \
     initrd/initrd.c \
     smp/percpu.c \
     smp/smp.c \
-    smp/tlb.c
+    smp/tlb.c \
+    signal/signal.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
@@ -119,6 +121,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/apic
 	mkdir -p $(BUILD_DIR)/initrd
 	mkdir -p $(BUILD_DIR)/smp
+	mkdir -p $(BUILD_DIR)/signal
 
 # Ensure directories exist before compiling
 $(BUILD_DIR)/debug/%.o: | $(BUILD_DIR)

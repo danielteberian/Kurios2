@@ -6,6 +6,10 @@
 #include "../mm/vmm.h"
 #include "../arch/x86_64/cpu.h"
 #include "../arch/x86_64/io.h"
+#include "../arch/x86_64/idt.h"
+#include "../drivers/hpet.h"
+#include "../sched/sched.h"
+#include "../sched/thread.h"
 
 /* Virtual addresses for APIC register access */
 static volatile uint32_t *lapic_base = NULL;
@@ -404,6 +408,8 @@ void lapic_send_init(uint8_t apic_id)
 
 /*
  * Send INIT IPI de-assert (broadcast)
+ * Note: This is required by the MP specification for old processors.
+ * Modern processors may not require it, but it doesn't hurt.
  */
 void lapic_send_init_deassert(void)
 {
@@ -411,9 +417,10 @@ void lapic_send_init_deassert(void)
 
     lapic_wait_ipi();
 
-    /* INIT de-assert is sent to all including self */
+    /* INIT de-assert: Level=0, Trigger Mode=Level, All including self
+     * ICR value = 0x88500 (INIT + level trigger + all including self + de-assert) */
     lapic_write(LAPIC_ICR_HI, 0);
-    lapic_write(LAPIC_ICR_LO, LAPIC_ICR_INIT | LAPIC_ICR_LEVEL |
+    lapic_write(LAPIC_ICR_LO, LAPIC_ICR_INIT | LAPIC_ICR_TRIGGER_LEVEL |
                 LAPIC_ICR_DEASSERT | LAPIC_ICR_DEST_ALL);
 
     lapic_wait_ipi();
@@ -522,6 +529,172 @@ void lapic_init_ap(void)
     lapic_write(LAPIC_EOI, 0);
 
     DEBUG("APIC: AP Local APIC initialized (ID=%u)", id);
+}
+
+/*
+ * LAPIC Timer Implementation
+ *
+ * The LAPIC timer is a per-CPU timer that counts down from an initial value.
+ * We calibrate it using HPET to determine the tick rate.
+ */
+
+/* LAPIC timer calibration results (shared across CPUs - they use same bus) */
+static uint32_t lapic_timer_ticks_per_ms = 0;
+static bool lapic_timer_calibrated = false;
+static bool lapic_timer_running = false;
+
+/*
+ * LAPIC timer interrupt handler
+ */
+static void lapic_timer_handler(cpu_state_t *state)
+{
+    (void)state;
+
+    /* Send EOI first */
+    lapic_eoi();
+
+    /* Call scheduler tick */
+    if (thread_is_initialized()) {
+        sched_tick();
+    }
+}
+
+/*
+ * Calibrate LAPIC timer using HPET
+ * Returns ticks per millisecond
+ */
+static uint32_t lapic_timer_calibrate(void)
+{
+    if (!hpet_is_available()) {
+        WARN("LAPIC Timer: HPET not available for calibration, using estimate");
+        /* Fallback: assume 100 MHz bus clock / 16 divider = 6.25 MHz timer
+         * This is a rough estimate and may not be accurate */
+        return 6250;  /* ticks per ms */
+    }
+
+    /* Use HPET for accurate timing */
+    DEBUG("LAPIC Timer: Calibrating using HPET...");
+
+    /* Set up timer: divide by 16, one-shot mode, masked initially */
+    lapic_write(LAPIC_TIMER_DCR, LAPIC_TIMER_DIV_16);
+    lapic_write(LAPIC_LVT_TIMER, LAPIC_LVT_MASKED);
+
+    /* Start with a large count */
+    lapic_write(LAPIC_TIMER_ICR, 0xFFFFFFFF);
+
+    /* Wait 10ms using HPET */
+    hpet_delay_ms(10);
+
+    /* Read how many ticks have elapsed */
+    uint32_t elapsed = 0xFFFFFFFF - lapic_read(LAPIC_TIMER_CCR);
+
+    /* Stop the timer */
+    lapic_write(LAPIC_LVT_TIMER, LAPIC_LVT_MASKED);
+
+    /* Calculate ticks per millisecond */
+    uint32_t ticks_per_ms = elapsed / 10;
+
+    DEBUG("LAPIC Timer: Calibrated at %u ticks/ms (elapsed=%u in 10ms)",
+          ticks_per_ms, elapsed);
+
+    return ticks_per_ms;
+}
+
+/*
+ * Initialize LAPIC timer (BSP)
+ */
+void lapic_timer_init(void)
+{
+    if (!lapic_base) {
+        ERROR("LAPIC Timer: Local APIC not initialized");
+        return;
+    }
+
+    /* Register interrupt handler */
+    idt_register_handler(LAPIC_TIMER_VECTOR, (interrupt_handler_t)lapic_timer_handler);
+
+    /* Calibrate the timer */
+    lapic_timer_ticks_per_ms = lapic_timer_calibrate();
+    lapic_timer_calibrated = true;
+
+    INFO("LAPIC Timer: Initialized, %u ticks/ms", lapic_timer_ticks_per_ms);
+}
+
+/*
+ * Initialize LAPIC timer for an AP
+ * Uses calibration data from BSP
+ */
+void lapic_timer_init_ap(void)
+{
+    if (!lapic_base || !lapic_timer_calibrated) {
+        return;
+    }
+
+    /* APs don't need to register handler - it's shared via IDT
+     * Just start the timer */
+    DEBUG("LAPIC Timer: AP timer initialized");
+}
+
+/*
+ * Start LAPIC timer in periodic mode
+ */
+void lapic_timer_start(uint32_t hz)
+{
+    if (!lapic_base || !lapic_timer_calibrated) {
+        ERROR("LAPIC Timer: Not initialized");
+        return;
+    }
+
+    /* Calculate initial count for desired frequency */
+    uint32_t ticks_per_interrupt = (lapic_timer_ticks_per_ms * 1000) / hz;
+
+    if (ticks_per_interrupt == 0) {
+        ticks_per_interrupt = 1;
+    }
+
+    DEBUG("LAPIC Timer: Starting at %u Hz (initial count=%u)",
+          hz, ticks_per_interrupt);
+
+    /* Configure timer:
+     * - Periodic mode
+     * - Vector = LAPIC_TIMER_VECTOR
+     * - Not masked */
+    lapic_write(LAPIC_TIMER_DCR, LAPIC_TIMER_DIV_16);
+    lapic_write(LAPIC_LVT_TIMER, LAPIC_TIMER_VECTOR | LAPIC_TIMER_PERIODIC);
+    lapic_write(LAPIC_TIMER_ICR, ticks_per_interrupt);
+
+    lapic_timer_running = true;
+}
+
+/*
+ * Stop LAPIC timer
+ */
+void lapic_timer_stop(void)
+{
+    if (!lapic_base) {
+        return;
+    }
+
+    /* Mask the timer interrupt */
+    lapic_write(LAPIC_LVT_TIMER, LAPIC_LVT_MASKED);
+
+    lapic_timer_running = false;
+}
+
+/*
+ * Check if LAPIC timer is running
+ */
+bool lapic_timer_is_running(void)
+{
+    return lapic_timer_running;
+}
+
+/*
+ * Get LAPIC timer frequency (ticks per second)
+ */
+uint32_t lapic_timer_get_frequency(void)
+{
+    return lapic_timer_ticks_per_ms * 1000;
 }
 
 #ifdef DEBUG_TESTS

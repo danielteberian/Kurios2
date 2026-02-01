@@ -29,4 +29,8 @@ void *memmove(void *dst, const void *src, size_t n);
 void *memset(void *s, int c, size_t n);
 int memcmp(const void *s1, const void *s2, size_t n);
 
+/* String formatting */
+int snprintf(char *str, size_t size, const char *format, ...);
+int vsnprintf(char *str, size_t size, const char *format, __builtin_va_list ap);
+
 #endif /* _KERNEL_STRING_H */

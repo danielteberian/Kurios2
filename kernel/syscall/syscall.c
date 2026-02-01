@@ -13,6 +13,7 @@
 #include "../fs/fd_table.h"
 #include "../mm/slab.h"
 #include "../drivers/keyboard.h"
+#include "../signal/signal.h"
 #include "lib/string.h"
 
 /*
@@ -507,6 +508,135 @@ static int64_t sys_getppid(uint64_t arg1, uint64_t arg2,
 }
 
 /*
+ * sys_wait4 - wait for a child process
+ *
+ * @param pid      Child PID to wait for, or -1 for any child
+ * @param status   Pointer to store status (user pointer, can be NULL)
+ * @param options  Options (WNOHANG, WUNTRACED)
+ * @param rusage   Resource usage (ignored for now)
+ * @return Child PID on success, 0 if WNOHANG and no child exited,
+ *         or negative error code
+ *
+ * This implements waitpid() semantics via the wait4 syscall.
+ */
+static int64_t sys_wait4(uint64_t pid_arg, uint64_t status_ptr,
+                         uint64_t options, uint64_t rusage,
+                         uint64_t arg5, uint64_t arg6) {
+    (void)rusage; (void)arg5; (void)arg6;
+
+    pid_t target_pid = (pid_t)pid_arg;
+    int *status = (int *)status_ptr;
+
+    DEBUG("sys_wait4(pid=%d, status=0x%llx, options=0x%llx)",
+          (int32_t)target_pid, status_ptr, options);
+
+    /* Validate status pointer if provided */
+    if (status && !access_ok(status, sizeof(int))) {
+        return -EFAULT;
+    }
+
+    process_t *parent = process_current();
+    if (!parent) {
+        return -ESRCH;
+    }
+
+    /*
+     * Wait for child process(es)
+     *
+     * pid_arg meanings:
+     *   < -1: Wait for any child in process group |pid|  (not implemented)
+     *   == -1: Wait for any child
+     *   == 0:  Wait for any child in same process group (not implemented)
+     *   > 0:   Wait for specific child with that PID
+     */
+    pid_t wait_for = (target_pid == 0 || (int32_t)target_pid < -1) ?
+                     (pid_t)-1 : target_pid;
+
+    while (1) {
+        /* Check if we have any children at all */
+        if (!process_has_children(parent->pid)) {
+            return -ECHILD;  /* No children to wait for */
+        }
+
+        /* Look for a zombie child */
+        process_t *child = process_find_zombie_child(parent->pid, wait_for);
+
+        if (child) {
+            /* Found a zombie child - reap it */
+            pid_t child_pid = child->pid;
+            int exit_code = child->exit_code;
+
+            DEBUG("sys_wait4: found zombie child PID %u, exit_code=%d",
+                  child_pid, exit_code);
+
+            /* Store status if requested
+             * Format: exit_code in high byte, signal in low byte
+             * For normal exit: (exit_code << 8) | 0 */
+            if (status) {
+                int kstatus = (exit_code & 0xff) << 8;  /* Normal exit */
+                if (copy_to_user(status, &kstatus, sizeof(int)) < 0) {
+                    return -EFAULT;
+                }
+            }
+
+            /* Destroy the child process (reap it) */
+            process_destroy(child);
+
+            return (int64_t)child_pid;
+        }
+
+        /* No zombie child found */
+        if (options & WNOHANG) {
+            /* Don't block - return 0 indicating no child changed state */
+            return 0;
+        }
+
+        /* Block waiting for a child
+         * In a real implementation, we'd sleep and be woken when a child exits.
+         * For now, just yield and try again (busy-wait). */
+        sched_reschedule();
+    }
+}
+
+/*
+ * sys_kill - send a signal to a process
+ *
+ * @param pid     Process ID to signal (or special values)
+ * @param sig     Signal number to send
+ * @return 0 on success, negative error on failure
+ *
+ * Special pid values:
+ *   > 0:  Send to specific process
+ *   == 0: Send to all processes in same process group (not implemented)
+ *   == -1: Send to all processes except init (not implemented)
+ *   < -1: Send to process group -pid (not implemented)
+ */
+static int64_t sys_kill(uint64_t pid_arg, uint64_t sig,
+                        uint64_t arg3, uint64_t arg4,
+                        uint64_t arg5, uint64_t arg6)
+{
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    int32_t pid = (int32_t)pid_arg;
+    int signum = (int)sig;
+
+    DEBUG("sys_kill(pid=%d, sig=%d)", pid, signum);
+
+    /* Validate signal number */
+    if (signum < 0 || signum >= NSIG) {
+        return -EINVAL;
+    }
+
+    /* For now, only support sending to specific process */
+    if (pid <= 0) {
+        WARN("sys_kill: process groups not implemented (pid=%d)", pid);
+        return -ESRCH;
+    }
+
+    return signal_send((uint32_t)pid, signum);
+}
+
+/*
  * Fork return assembly entry point (defined in syscall_entry.asm)
  * This is called by the child after fork to return to user mode.
  * Takes pointer to syscall_frame_t in RDI.
@@ -994,7 +1124,9 @@ void syscall_init(void) {
     syscall_register(SYS_EXIT, sys_exit);
     syscall_register(SYS_GETPID, sys_getpid);
     syscall_register(SYS_GETPPID, sys_getppid);
-    /* Note: SYS_FORK is handled specially in syscall_dispatch */
+    syscall_register(SYS_WAIT4, sys_wait4);
+    syscall_register(SYS_KILL, sys_kill);
+    /* Note: SYS_FORK and SYS_EXECVE are handled specially in syscall_dispatch */
 
     /*
      * Configure MSRs for SYSCALL/SYSRET
