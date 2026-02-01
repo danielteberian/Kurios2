@@ -47,9 +47,10 @@
 ## Next Up
 - [ ] **Initial ramdisk** - initrd/initramfs support
 - [ ] **SMP support** - Multi-core CPU support (uses APIC)
-- [ ] **HPET timer** - High-precision timer (already discovered via ACPI)
+- [ ] **More syscalls** - open, read, close, mmap for user programs
 
 ## Completed Recently
+- [x] HPET timer - VERIFIED WORKING (100 MHz, 3 timers, 64-bit counter, delay functions)
 - [x] APIC setup - VERIFIED WORKING (Local APIC, I/O APIC, IRQ routing, PIC disabled)
 - [x] ACPI table parsing - VERIFIED WORKING (MADT, FADT, HPET; Local APIC, I/O APIC, IRQ overrides)
 - [x] Per-process file descriptor table - IMPLEMENTED (fd_table.c, fork clones fds, exec closes FD_CLOEXEC)

@@ -199,6 +199,18 @@
   - fork() clones parent's fd table to child
   - Fallback to global table before process subsystem initialized
 
+### HPET Timer [VERIFIED]
+- [2026-01-31] HPET driver (`kernel/drivers/hpet.c`, `kernel/drivers/hpet.h`)
+  - Initialize from ACPI-provided address (0xFED00000)
+  - Read capabilities (timers, counter size, period)
+  - Enable main counter, disable timer interrupts
+  - hpet_read_counter() - Read 64-bit counter
+  - hpet_get_ns/us/ms() - Get elapsed time
+  - hpet_delay_ns/us/ms() - Precision busy-wait
+  - hpet_get_frequency() - Returns counter frequency
+- [2026-01-31] Verified: 100 MHz, 3 timers, 64-bit counter
+- [2026-01-31] Verified: 10ms and 1000us delays accurate
+
 ### APIC Setup [VERIFIED]
 - [2026-01-31] APIC subsystem (`kernel/apic/apic.c`, `kernel/apic/apic.h`)
   - Local APIC initialization (SVR, LVT masking, TPR, error clearing)

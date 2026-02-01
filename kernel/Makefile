@@ -28,6 +28,7 @@ C_SOURCES := \
     drivers/keyboard.c \
     drivers/vga.c \
     drivers/pit.c \
+    drivers/hpet.c \
     sched/thread.c \
     sched/sched.c \
     process/process.c \

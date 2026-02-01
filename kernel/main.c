@@ -31,6 +31,7 @@
 #include "boot_info.h"
 #include "acpi/acpi.h"
 #include "apic/apic.h"
+#include "drivers/hpet.h"
 
 #ifdef DEBUG_TESTS
 /* Test global constructor */
@@ -355,12 +356,20 @@ void kernel_main(BootInfo *boot_info) {
         WARN("APIC initialization failed - using legacy PIC");
     }
 
+    /* Initialize HPET (requires ACPI for address) */
+    if (hpet_init() != 0) {
+        DEBUG("HPET not available - using PIT for timing");
+    }
+
 #ifdef DEBUG_TESTS
     /* Run ACPI tests */
     acpi_run_tests();
 
     /* Run APIC tests */
     apic_run_tests();
+
+    /* Run HPET tests */
+    hpet_run_tests();
 
     /* Run address space tests (requires slab allocator) */
     as_run_tests();
