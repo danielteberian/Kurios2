@@ -849,6 +849,80 @@ static int64_t sys_chdir(uint64_t pathname, uint64_t arg2, uint64_t arg3,
 }
 
 /*
+ * Build path from VFS node by walking parent chain
+ */
+static int build_path_from_node(vfs_node_t *node, char *buf, size_t size) {
+    if (!node || size < 2) return -1;
+
+    /* Handle root */
+    if (!node->parent) {
+        buf[0] = '/';
+        buf[1] = '\0';
+        return 0;
+    }
+
+    /* Build path in reverse using stack */
+    const char *parts[64];
+    int depth = 0;
+    vfs_node_t *n = node;
+
+    while (n && n->parent && depth < 64) {
+        parts[depth++] = n->name;
+        n = n->parent;
+    }
+
+    /* Construct path */
+    char *p = buf;
+    char *end = buf + size - 1;
+
+    for (int i = depth - 1; i >= 0 && p < end; i--) {
+        *p++ = '/';
+        const char *name = parts[i];
+        while (*name && p < end) {
+            *p++ = *name++;
+        }
+    }
+
+    if (p == buf) *p++ = '/';  /* Root case */
+    *p = '\0';
+    return 0;
+}
+
+/*
+ * sys_fchdir - change working directory by file descriptor
+ */
+static int64_t sys_fchdir(uint64_t fd, uint64_t arg2, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    process_t *proc = process_current();
+    if (!proc || !proc->fd_table) {
+        return -EBADF;
+    }
+
+    file_t *file = fd_table_get(proc->fd_table, (int)fd);
+    if (!file || !file->node) {
+        return -EBADF;
+    }
+
+    /* Must be a directory */
+    if (file->node->type != VFS_DIR) {
+        return -ENOTDIR;
+    }
+
+    /* Get full path of the directory */
+    char path[256];
+    if (build_path_from_node(file->node, path, sizeof(path)) < 0) {
+        return -ENOENT;
+    }
+
+    strncpy(proc->cwd, path, sizeof(proc->cwd) - 1);
+    proc->cwd[sizeof(proc->cwd) - 1] = '\0';
+
+    return 0;
+}
+
+/*
  * sys_umask - set file mode creation mask
  *
  * @param mask  New umask value
@@ -2301,6 +2375,7 @@ void syscall_init(void) {
     syscall_register(SYS_GETDENTS, sys_getdents);
     syscall_register(SYS_GETCWD, sys_getcwd);
     syscall_register(SYS_CHDIR, sys_chdir);
+    syscall_register(SYS_FCHDIR, sys_fchdir);
     syscall_register(SYS_MKDIR, sys_mkdir);
     syscall_register(SYS_RMDIR, sys_rmdir);
     syscall_register(SYS_UNLINK, sys_unlink);
