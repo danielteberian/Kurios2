@@ -407,10 +407,49 @@ When adding new files:
 
 ---
 
+---
+
+## userspace/ - User-Space Programs
+
+### userspace/ Root Files
+
+| File | Purpose |
+|------|---------|
+| `Makefile` | Builds user-space programs, creates initrd. Targets: `all`, `initrd`, `clean` |
+| `linker.ld` | Linker script for user programs. Base address 0x400000 (4MB) |
+
+### userspace/libc/ - Minimal C Library
+
+| File | Purpose |
+|------|---------|
+| `syscall.h` | Syscall numbers and inline wrapper functions (read, write, fork, exec, etc.) |
+| `syscall.S` | Assembly syscall stubs (syscall0-syscall6) using SYSCALL instruction |
+| `string.c` | String functions: strlen, strcmp, strcpy, strncpy, strchr, memset, memcpy, memcmp, atoi |
+| `stdio.c` | I/O functions: printf (subset), puts, putchar, getchar, getline_fd |
+| `start.c` | C runtime startup: _start entry point, calls main(), then _exit() |
+
+### userspace/libc/include/ - Standard Headers
+
+| File | Purpose |
+|------|---------|
+| `stddef.h` | Defines size_t, ptrdiff_t, NULL, offsetof |
+| `stdint.h` | Fixed-width integer types: int8_t through uint64_t |
+
+### userspace/sh/ - Shell
+
+| File | Purpose |
+|------|---------|
+| `sh.c` | Simple shell with built-in commands (cd, pwd, ls, cat, echo, mkdir, rm, help, exit) and external command execution via fork/exec |
+
+---
+
 ## File Statistics
 
-- **Total source files**: ~100
+- **Total source files**: ~110
 - **Kernel C files**: ~55
 - **Kernel ASM files**: 7
-- **Header files**: ~45
-- **Kernel size**: ~165KB
+- **User-space C files**: 5
+- **User-space ASM files**: 1
+- **Header files**: ~50
+- **Kernel size**: ~170KB
+- **Shell size**: ~12KB

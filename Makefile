@@ -1,12 +1,15 @@
 # Kurios2 - Top Level Makefile
 
-.PHONY: all clean boot kernel image-bios image-uefi run-bios run-uefi debug run-debug run-gdb run-gdb-wait test run-test
+.PHONY: all clean boot kernel userspace image-bios image-uefi run-bios run-uefi debug run-debug run-gdb run-gdb-wait test run-test run-shell initrd
 
 # Build directories
 BUILD_DIR := build
 ISO_DIR := $(BUILD_DIR)/iso
 
 all: boot kernel
+
+# Full build with shell
+shell: boot kernel userspace initrd
 
 # Build bootloader
 boot:
@@ -15,6 +18,14 @@ boot:
 # Build kernel
 kernel:
 	$(MAKE) -C kernel
+
+# Build userspace programs
+userspace:
+	$(MAKE) -C userspace
+
+# Create initrd with userspace programs
+initrd: userspace
+	$(MAKE) -C userspace initrd
 
 # Debug build (with DEBUG_TESTS enabled)
 debug: boot
@@ -167,6 +178,29 @@ run-bios: image-bios
 		-no-reboot \
 		-no-shutdown
 
+# Run with shell (builds userspace, creates initrd, boots with shell)
+run-shell: shell
+	@KERNEL_SIZE=$$(stat -c%s $(BUILD_DIR)/kernel/kernel.bin); \
+	INITRD_SIZE=$$(stat -c%s $(BUILD_DIR)/userspace/initrd.cpio); \
+	echo "Rebuilding bootloader with KERNEL_SIZE=$$KERNEL_SIZE INITRD_SIZE=$$INITRD_SIZE"; \
+	$(MAKE) -C boot KERNEL_SIZE=$$KERNEL_SIZE INITRD_SIZE=$$INITRD_SIZE
+	@echo "Creating disk image with initrd..."
+	@dd if=/dev/zero of=$(BUILD_DIR)/kurios2-bios.img bs=512 count=16384 2>/dev/null
+	@dd if=$(BUILD_DIR)/boot/bios_boot.bin of=$(BUILD_DIR)/kurios2-bios.img conv=notrunc 2>/dev/null
+	@dd if=$(BUILD_DIR)/kernel/kernel.bin of=$(BUILD_DIR)/kurios2-bios.img bs=512 seek=34 conv=notrunc 2>/dev/null
+	@KERNEL_SIZE=$$(stat -c%s $(BUILD_DIR)/kernel/kernel.bin); \
+	KERNEL_SECTORS=$$(( ($$KERNEL_SIZE + 511) / 512 )); \
+	INITRD_LBA=$$(( 34 + $$KERNEL_SECTORS )); \
+	echo "Writing initrd at sector $$INITRD_LBA..."; \
+	dd if=$(BUILD_DIR)/userspace/initrd.cpio of=$(BUILD_DIR)/kurios2-bios.img bs=512 seek=$$INITRD_LBA conv=notrunc 2>/dev/null
+	@echo "Booting with shell..."
+	qemu-system-x86_64 \
+		-drive format=raw,file=$(BUILD_DIR)/kurios2-bios.img \
+		-m 256M \
+		-serial stdio \
+		-no-reboot \
+		-no-shutdown
+
 # Run with QEMU (UEFI mode) - requires OVMF
 run-uefi: image-uefi
 	@if [ ! -f /usr/share/OVMF/OVMF_CODE.fd ]; then \
@@ -185,6 +219,7 @@ run-uefi: image-uefi
 clean:
 	$(MAKE) -C boot clean
 	$(MAKE) -C kernel clean
+	$(MAKE) -C userspace clean
 	rm -rf $(BUILD_DIR)
 
 # Show help
@@ -193,11 +228,15 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  all         - Build bootloader and kernel"
+	@echo "  shell       - Build kernel + userspace + initrd"
 	@echo "  boot        - Build bootloader only"
 	@echo "  kernel      - Build kernel only"
+	@echo "  userspace   - Build userspace programs"
+	@echo "  initrd      - Create initrd with userspace programs"
 	@echo "  debug       - Build with DEBUG_TESTS enabled"
 	@echo "  test        - Build with test framework"
 	@echo "  run-test    - Build and run kernel tests in QEMU"
+	@echo "  run-shell   - Build everything and run with shell"
 	@echo "  image-bios  - Create BIOS bootable disk image"
 	@echo "  image-uefi  - Create UEFI bootable disk image"
 	@echo "  image-iso   - Create hybrid ISO (requires grub-mkrescue)"

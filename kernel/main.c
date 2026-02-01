@@ -104,6 +104,10 @@ extern uint64_t _bss_end;
 extern uint64_t _kernel_virt_base;
 extern uint64_t _kernel_phys_base;
 
+/* Init process constants */
+#define INIT_STACK_TOP      0x7FFFFFF00000UL
+#define INIT_STACK_PAGES    16
+
 /* Memory type names */
 static const char *mmap_type_name(uint32_t type) {
     switch (type) {
@@ -129,6 +133,145 @@ static uint64_t calculate_usable_memory(BootInfo *boot_info) {
     }
 
     return total;
+}
+
+/*
+ * Start the init process (/bin/sh)
+ * Returns 0 on success (does not return on success actually - enters user mode)
+ * Returns -1 if /bin/sh not found or cannot be loaded
+ */
+static int start_init_process(void) {
+    const char *init_path = "/bin/sh";
+
+    INFO("Starting init process: %s", init_path);
+
+    /* Check if init exists */
+    int fd = vfs_open(init_path, O_RDONLY);
+    if (fd < 0) {
+        WARN("Init not found: %s (no initrd loaded?)", init_path);
+        return -1;
+    }
+
+    /* Get file size */
+    vfs_stat_t st;
+    if (vfs_fstat(fd, &st) < 0) {
+        vfs_close(fd);
+        ERROR("Failed to stat init");
+        return -1;
+    }
+
+    /* Read ELF file */
+    void *elf_data = kmalloc(st.size);
+    if (!elf_data) {
+        vfs_close(fd);
+        ERROR("Failed to allocate memory for init");
+        return -1;
+    }
+
+    ssize_t bytes_read = vfs_read(fd, elf_data, st.size);
+    vfs_close(fd);
+
+    if (bytes_read != (ssize_t)st.size) {
+        kfree(elf_data);
+        ERROR("Failed to read init");
+        return -1;
+    }
+
+    /* Create init process */
+    process_t *init_proc = process_create("init");
+    if (!init_proc) {
+        kfree(elf_data);
+        ERROR("Failed to create init process");
+        return -1;
+    }
+
+    /* Create address space for init */
+    address_space_t *init_as = as_create();
+    if (!init_as) {
+        kfree(elf_data);
+        ERROR("Failed to create address space for init");
+        return -1;
+    }
+
+    /* Load ELF */
+    elf_load_result_t elf_result;
+    int ret = elf_load(init_as, elf_data, st.size, &elf_result);
+    kfree(elf_data);
+
+    if (ret < 0) {
+        as_destroy(init_as);
+        ERROR("Failed to load init ELF: %d", ret);
+        return -1;
+    }
+
+    /* Allocate user stack */
+    uint64_t stack_bottom = INIT_STACK_TOP - (INIT_STACK_PAGES * PAGE_SIZE);
+    ret = as_alloc_pages(init_as, stack_bottom, INIT_STACK_PAGES,
+                         PTE_WRITABLE | PTE_USER);
+    if (ret < 0) {
+        as_destroy(init_as);
+        ERROR("Failed to allocate user stack for init");
+        return -1;
+    }
+
+    /* Set up initial stack (need to switch address space to write) */
+    as_switch(init_as);
+
+    uint64_t sp = INIT_STACK_TOP;
+
+    /* Push NULL for envp terminator */
+    sp -= 8;
+    *(uint64_t *)sp = 0;
+
+    /* Push NULL for argv terminator */
+    sp -= 8;
+    *(uint64_t *)sp = 0;
+
+    /* Push argc = 0 */
+    sp -= 8;
+    *(uint64_t *)sp = 0;
+
+    /* Switch back to kernel address space temporarily */
+    as_switch(as_get_kernel());
+
+    /* Update process */
+    init_proc->cr3 = init_as->cr3;
+    init_proc->entry_point = elf_result.entry_point;
+    init_proc->user_stack = sp;
+    init_proc->state = PROC_READY;
+    init_proc->brk = elf_result.end_addr;
+
+    /* Allocate kernel stack for init */
+    void *kernel_stack = kmalloc(16 * 1024);
+    if (!kernel_stack) {
+        as_destroy(init_as);
+        ERROR("Failed to allocate kernel stack for init");
+        return -1;
+    }
+    init_proc->kernel_stack = kernel_stack;
+    init_proc->kernel_stack_size = 16 * 1024;
+    init_proc->kernel_rsp = (uint64_t)kernel_stack + 16 * 1024;
+
+    INFO("Init process created: PID %u, entry=0x%llx, sp=0x%llx",
+         init_proc->pid, elf_result.entry_point, sp);
+
+    /* Set up entry structure */
+    user_entry_t entry = {
+        .rip = elf_result.entry_point,
+        .rsp = sp,
+        .rflags = 0x202,  /* IF=1, reserved bit 1 */
+        .as = init_as,
+        .kernel_stack = init_proc->kernel_rsp
+    };
+
+    /* Set init as current process */
+    process_set_current(init_proc);
+
+    /* Enter user mode - this does not return! */
+    user_enter(&entry);
+
+    /* Never reached */
+    return 0;
 }
 
 /* Kernel main entry point */
@@ -663,56 +806,60 @@ void kernel_main(BootInfo *boot_info) {
 
     INFO("Kernel initialization complete.");
 
-    /* Enable interrupts for keyboard */
+    /* Enable interrupts */
     sti();
-
-    /* Show prompt on both serial and VGA */
-    kprintf("\n");
-    kprintf("Keyboard ready. Type something (Ctrl+C to halt):\n> ");
 
     vga_set_color(VGA_LIGHT_GREEN, VGA_BLACK);
     vga_puts("Kurios2 Kernel Ready!\n\n");
     vga_set_color(VGA_WHITE, VGA_BLACK);
-    vga_puts("Type something (Ctrl+C to halt):\n> ");
 
-    /* Simple keyboard echo loop */
-    while (1) {
-        char c = keyboard_getchar();
+    /* Try to start init process (/bin/sh) */
+    if (start_init_process() < 0) {
+        /* Init not found - fall back to keyboard loop */
+        WARN("No init process - falling back to kernel console");
+        kprintf("\n");
+        kprintf("No /bin/sh found. Entering kernel console.\n");
+        kprintf("Load an initrd with /bin/sh to get a shell.\n");
+        kprintf("Keyboard ready. Type something (Ctrl+C to halt):\n> ");
+        vga_puts("No /bin/sh - kernel console mode.\n> ");
 
-        if (keyboard_ctrl_pressed() && c == 'c') {
-            kprintf("\n\nCtrl+C pressed. Halting.\n");
-            vga_puts("\n\nHalting...\n");
-            break;
-        }
+        /* Simple keyboard echo loop */
+        while (1) {
+            char c = keyboard_getchar();
+
+            if (keyboard_ctrl_pressed() && c == 'c') {
+                kprintf("\n\nCtrl+C pressed. Halting.\n");
+                vga_puts("\n\nHalting...\n");
+                break;
+            }
 
 #ifdef DEBUG_TESTS
-        /* Ctrl+U: Enter user mode test */
-        if (keyboard_ctrl_pressed() && c == 'u') {
-            kprintf("\n\nCtrl+U pressed. Running user mode test...\n");
-            kprintf("(This will enter user mode and exit via syscall)\n\n");
-            vga_puts("\n\nEntering user mode...\n");
-            user_entry_run_tests();
-            /* Note: user_entry_run_tests() does not return */
-        }
+            /* Ctrl+U: Enter user mode test */
+            if (keyboard_ctrl_pressed() && c == 'u') {
+                kprintf("\n\nCtrl+U pressed. Running user mode test...\n");
+                vga_puts("\n\nEntering user mode...\n");
+                user_entry_run_tests();
+            }
 #endif
 
-        if (c == '\n') {
-            uint64_t uptime = pit_get_uptime_ms();
-            kprintf(" [%llu.%03llus]\n> ", uptime / 1000, uptime % 1000);
-            vga_puts("\n> ");
-        } else if (c == '\b' || c == KEY_DELETE) {
-            /* Backspace and Delete both erase */
-            kprintf("\b \b");
-            vga_putc('\b');
-        } else if ((uint8_t)c >= 0x80) {
-            /* Ignore other special keys (arrows, etc.) for now */
-            continue;
-        } else if (c >= 0x20) {
-            /* Printable characters */
-            kprintf("%c", c);
-            vga_putc(c);
+            if (c == '\n') {
+                uint64_t uptime = pit_get_uptime_ms();
+                kprintf(" [%llu.%03llus]\n> ", uptime / 1000, uptime % 1000);
+                vga_puts("\n> ");
+            } else if (c == '\b' || c == KEY_DELETE) {
+                kprintf("\b \b");
+                vga_putc('\b');
+            } else if ((uint8_t)c >= 0x80) {
+                continue;
+            } else if (c >= 0x20) {
+                kprintf("%c", c);
+                vga_putc(c);
+            }
         }
     }
+
+    /* start_init_process doesn't return on success, so we only get here
+     * if init wasn't found or there was an error */
 
     /* Halt */
     cli();

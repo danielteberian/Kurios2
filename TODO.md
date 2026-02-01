@@ -467,7 +467,7 @@
 
 ### User-Owned (Phase 12) - See Phase 12 for full checklists
 - [ ] C library (libc) + math library (libm)
-- [ ] Shell (/bin/sh)
+- [x] Shell (/bin/sh) - Basic shell with built-ins (cd, pwd, ls, cat, echo, mkdir, rm)
 - [ ] Coreutils, fileutils, binutils
 - [ ] Development tools (compiler, make, editor)
 - [ ] Init system

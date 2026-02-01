@@ -384,6 +384,32 @@
   - signal_frame_t with saved registers, signal number, saved mask
   - Embedded sigreturn trampoline code
 
+### User-Space Shell [IMPLEMENTED]
+- [2026-02-01] Basic shell (/bin/sh) for user-space
+  - Shell implemented in userspace/sh/sh.c
+  - Minimal libc (syscall wrappers, string functions, printf, getline)
+  - Built-in commands: cd, pwd, ls, cat, echo, mkdir, rm, help, exit
+  - External command execution via fork()/exec()
+  - Path searching (/bin/, /)
+  - Line editing with backspace
+  - Current directory display in prompt
+- [2026-02-01] User-space build infrastructure
+  - userspace/Makefile builds user programs
+  - userspace/linker.ld linker script (base address 0x400000)
+  - userspace/libc/syscall.S - assembly syscall wrappers
+  - userspace/libc/syscall.h - syscall numbers and inline wrappers
+  - userspace/libc/string.c - string functions (strlen, strcmp, memcpy, etc.)
+  - userspace/libc/stdio.c - I/O functions (printf, puts, getline)
+  - userspace/libc/start.c - _start entry point (calls main)
+  - userspace/libc/include/ - minimal stddef.h, stdint.h headers
+- [2026-02-01] Initrd creation and shell loading
+  - `make initrd` creates CPIO newc archive with /bin/sh
+  - `make shell` builds kernel + userspace + initrd
+  - `make run-shell` runs system with shell
+  - Kernel loads /bin/sh as init process (PID 1)
+  - start_init_process() in main.c launches shell on boot
+- [2026-02-01] Verified: Shell starts and shows prompt "[/]$"
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000
