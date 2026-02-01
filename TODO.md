@@ -50,6 +50,7 @@
 - [ ] **PTY** - Pseudo-terminals for remote shells
 
 ## Completed Recently
+- [x] **isatty/ioctl** - IMPLEMENTED (TCGETS, TIOCGWINSZ for TTY detection)
 - [x] **/dev/null, /dev/zero** - IMPLEMENTED (null device, zero device)
 - [x] **Standard I/O** - IMPLEMENTED (fd 0/1/2 auto-connected to /dev/console)
 - [x] **TTY** - IMPLEMENTED (/dev/console, VGA output, keyboard input buffer)

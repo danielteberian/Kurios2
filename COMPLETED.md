@@ -312,6 +312,13 @@
   - 26+ syscall tests in syscall_run_tests()
   - Tests: identity, time, memory, filesystem, I/O, scheduling, signals, error handling
 
+### isatty/ioctl [IMPLEMENTED]
+- [2026-02-01] TTY detection via ioctl (`kernel/syscall/syscall.c`)
+  - is_tty() helper checks if fd points to /dev/console
+  - TCGETS (0x5401): Returns 0 for TTY, -ENOTTY otherwise
+  - TIOCGWINSZ (0x5413): Returns 80x25 window size for TTY
+  - Enables isatty() to work correctly for interactive detection
+
 ### Device Nodes [IMPLEMENTED]
 - [2026-02-01] /dev/null and /dev/zero (`kernel/drivers/tty.c`)
   - /dev/null: Returns EOF on read, discards all writes

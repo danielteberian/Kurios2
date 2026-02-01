@@ -1581,25 +1581,64 @@ static int64_t sys_uname(uint64_t buf, uint64_t arg2, uint64_t arg3,
 }
 
 /*
- * sys_ioctl - device control (minimal stub)
+ * Check if file descriptor is a TTY
+ */
+static bool is_tty(int fd) {
+    process_t *proc = process_current();
+    if (!proc || !proc->fd_table) {
+        return false;
+    }
+
+    file_t *file = fd_table_get(proc->fd_table, fd);
+    if (!file || !file->node) {
+        return false;
+    }
+
+    /* Check if it's /dev/console (a chardev named "console") */
+    if (file->node->type == VFS_CHARDEV &&
+        strcmp(file->node->name, "console") == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+/*
+ * sys_ioctl - device control
  */
 static int64_t sys_ioctl(uint64_t fd, uint64_t request, uint64_t arg,
                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
-    (void)arg; (void)arg4; (void)arg5; (void)arg6;
+    (void)arg4; (void)arg5; (void)arg6;
 
-    /* Terminal ioctls for stdin/stdout/stderr */
-    if (fd <= 2) {
-        switch (request) {
-        case 0x5401:  /* TCGETS - get terminal attributes */
-            return -ENOTTY;  /* Not a terminal */
-        case 0x5413:  /* TIOCGWINSZ - get window size */
-            return -ENOTTY;
-        default:
+    /* Check if fd is a TTY */
+    bool tty = is_tty((int)fd);
+
+    switch (request) {
+    case 0x5401:  /* TCGETS - get terminal attributes */
+        if (!tty) {
             return -ENOTTY;
         }
-    }
+        /* For now, just return success (isatty() only checks return value) */
+        return 0;
 
-    return -ENOTTY;
+    case 0x5413:  /* TIOCGWINSZ - get window size */
+        if (!tty) {
+            return -ENOTTY;
+        }
+        /* Return default 80x25 window size */
+        if (arg && access_ok((void *)arg, 8)) {
+            uint16_t *ws = (uint16_t *)arg;
+            ws[0] = 25;   /* ws_row */
+            ws[1] = 80;   /* ws_col */
+            ws[2] = 0;    /* ws_xpixel */
+            ws[3] = 0;    /* ws_ypixel */
+            return 0;
+        }
+        return -EFAULT;
+
+    default:
+        return -ENOTTY;
+    }
 }
 
 /*
