@@ -21,6 +21,7 @@
 #include "drivers/mouse.h"
 #include "drivers/vga.h"
 #include "drivers/tty.h"
+#include "drivers/pty.h"
 #include "drivers/pit.h"
 #include "sched/thread.h"
 #include "sched/sched.h"
@@ -546,6 +547,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize TTY (/dev/console) */
     tty_init();
+
+    /* Initialize PTY subsystem (/dev/ptmx, /dev/pts/) */
+    pty_init();
 
     /* Initialize PCI subsystem */
     pci_init();

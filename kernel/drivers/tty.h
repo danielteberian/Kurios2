@@ -119,4 +119,45 @@ void tty_flush(int queue);
  */
 bool tty_is_tty(void);
 
+/*
+ * Line discipline functions for PTY reuse
+ */
+
+/*
+ * Initialize termios settings to defaults
+ *
+ * @param t  termios structure to initialize
+ */
+void tty_init_termios(termios_t *t);
+
+/*
+ * Process input character through line discipline
+ * Used by PTY master write path
+ *
+ * @param tty        TTY state (termios, canon_buf, etc.)
+ * @param c          Input character
+ * @param output_cb  Callback to send character to output (e.g., VGA, PTY m2s buffer)
+ * @param echo_cb    Callback for echoing (same as output for console, s2m for PTY)
+ * @param signal_cb  Callback to send signal to fg_pgrp
+ * @param ctx        Context pointer passed to callbacks
+ */
+typedef void (*tty_output_cb_t)(void *ctx, char c);
+typedef void (*tty_signal_cb_t)(void *ctx, int signum);
+
+void tty_ldisc_input(tty_t *tty, char c,
+                     tty_output_cb_t output_cb,
+                     tty_output_cb_t echo_cb,
+                     tty_signal_cb_t signal_cb,
+                     void *ctx);
+
+/*
+ * Handle common TTY ioctls (TCGETS, TCSETS, etc.)
+ * Returns 0 on success, negative error, or 1 if ioctl not handled
+ *
+ * @param tty      TTY state
+ * @param request  ioctl command
+ * @param arg      Argument pointer
+ */
+int tty_ioctl_common(tty_t *tty, unsigned long request, void *arg);
+
 #endif /* _KERNEL_TTY_H */

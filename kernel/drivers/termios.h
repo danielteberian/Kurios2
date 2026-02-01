@@ -104,6 +104,8 @@
 #define TIOCGWINSZ  0x5413      /* Get window size */
 #define TIOCSWINSZ  0x5414      /* Set window size */
 #define TIOCSCTTY   0x540E      /* Set controlling terminal */
+#define TIOCGPTN    0x80045430  /* Get PTY number */
+#define TIOCSPTLCK  0x40045431  /* Lock/unlock PTY slave */
 
 /*
  * Window size structure

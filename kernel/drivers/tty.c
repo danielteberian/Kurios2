@@ -11,11 +11,7 @@
 static tty_t console_tty;
 
 /* Forward declarations */
-static void tty_echo(tty_t *tty, char c);
-static void tty_echo_ctrl(tty_t *tty, char c);
 static void tty_process_input(tty_t *tty, char c);
-static void tty_erase_char(tty_t *tty);
-static void tty_kill_line(tty_t *tty);
 static void tty_output_char(char c);
 
 /* TTY node operations */
@@ -101,7 +97,7 @@ static node_ops_t urandom_ops = {
 /*
  * Initialize default termios settings
  */
-static void tty_init_termios(termios_t *t) {
+void tty_init_termios(termios_t *t) {
     t->c_iflag = TERMIOS_DEFAULT_IFLAG;
     t->c_oflag = TERMIOS_DEFAULT_OFLAG;
     t->c_cflag = TERMIOS_DEFAULT_CFLAG;
@@ -169,96 +165,6 @@ static void tty_output_char(char c) {
 }
 
 /*
- * Echo a character
- */
-static void tty_echo(tty_t *tty, char c) {
-    if (!(tty->termios.c_lflag & ECHO)) {
-        return;  /* Echo disabled */
-    }
-
-    /* Control character echoing */
-    if (c < 32 && c != '\n' && c != '\t' && c != '\r') {
-        if (tty->termios.c_lflag & ECHOCTL) {
-            tty_echo_ctrl(tty, c);
-        }
-        return;
-    }
-
-    tty_output_char(c);
-}
-
-/*
- * Echo a control character as ^X
- */
-static void tty_echo_ctrl(tty_t *tty, char c) {
-    (void)tty;
-    tty_output_char('^');
-    tty_output_char(c + '@');
-}
-
-/*
- * Erase one character (backspace)
- */
-static void tty_erase_char(tty_t *tty) {
-    if (tty->canon_len == 0) {
-        return;
-    }
-
-    /* Get the character being erased */
-    char erased = tty->canon_buf[tty->canon_len - 1];
-    tty->canon_len--;
-
-    /* Visual echo of erase */
-    if (tty->termios.c_lflag & ECHO) {
-        if (tty->termios.c_lflag & ECHOE) {
-            /* Echo backspace-space-backspace */
-            tty_output_char('\b');
-            tty_output_char(' ');
-            tty_output_char('\b');
-
-            /* If erased char was a control char displayed as ^X, erase that too */
-            if (erased < 32 && erased != '\t' && (tty->termios.c_lflag & ECHOCTL)) {
-                tty_output_char('\b');
-                tty_output_char(' ');
-                tty_output_char('\b');
-            }
-        }
-    }
-}
-
-/*
- * Kill entire line (Ctrl+U)
- */
-static void tty_kill_line(tty_t *tty) {
-    if (tty->termios.c_lflag & ECHO) {
-        if (tty->termios.c_lflag & ECHOKE) {
-            /* Visual erase entire line */
-            while (tty->canon_len > 0) {
-                tty_erase_char(tty);
-            }
-        } else if (tty->termios.c_lflag & ECHOK) {
-            /* Just echo newline */
-            tty_output_char('\n');
-        }
-    }
-    tty->canon_len = 0;
-}
-
-/*
- * Word erase (Ctrl+W)
- */
-static void tty_word_erase(tty_t *tty) {
-    /* Skip trailing whitespace */
-    while (tty->canon_len > 0 && tty->canon_buf[tty->canon_len - 1] == ' ') {
-        tty_erase_char(tty);
-    }
-    /* Erase word */
-    while (tty->canon_len > 0 && tty->canon_buf[tty->canon_len - 1] != ' ') {
-        tty_erase_char(tty);
-    }
-}
-
-/*
  * Send signal to foreground process group
  */
 void tty_signal_fg(int signum) {
@@ -277,9 +183,168 @@ void tty_signal_fg(int signum) {
 }
 
 /*
- * Process an input character through line discipline
+ * Console-specific signal callback for line discipline
  */
-static void tty_process_input(tty_t *tty, char c) {
+static void console_signal_cb(void *ctx, int signum) {
+    (void)ctx;
+    tty_signal_fg(signum);
+}
+
+/*
+ * Console-specific output callback
+ */
+static void console_output_cb(void *ctx, char c) {
+    (void)ctx;
+    tty_output_char(c);
+}
+
+/*
+ * Line discipline context for internal helpers
+ * Used to pass callbacks through static helper functions
+ */
+typedef struct ldisc_ctx {
+    tty_t *tty;
+    tty_output_cb_t output_cb;
+    tty_output_cb_t echo_cb;
+    tty_signal_cb_t signal_cb;
+    void *user_ctx;
+} ldisc_ctx_t;
+
+/* Forward declarations for callback-based helpers */
+static void ldisc_echo(ldisc_ctx_t *ctx, char c);
+static void ldisc_echo_ctrl(ldisc_ctx_t *ctx, char c);
+static void ldisc_erase_char(ldisc_ctx_t *ctx);
+static void ldisc_kill_line(ldisc_ctx_t *ctx);
+static void ldisc_word_erase(ldisc_ctx_t *ctx);
+static void ldisc_flush_input(tty_t *tty);
+
+/*
+ * Echo a character using callback
+ */
+static void ldisc_echo(ldisc_ctx_t *ctx, char c) {
+    tty_t *tty = ctx->tty;
+
+    if (!(tty->termios.c_lflag & ECHO)) {
+        return;  /* Echo disabled */
+    }
+
+    /* Control character echoing */
+    if (c < 32 && c != '\n' && c != '\t' && c != '\r') {
+        if (tty->termios.c_lflag & ECHOCTL) {
+            ldisc_echo_ctrl(ctx, c);
+        }
+        return;
+    }
+
+    ctx->echo_cb(ctx->user_ctx, c);
+}
+
+/*
+ * Echo a control character as ^X using callback
+ */
+static void ldisc_echo_ctrl(ldisc_ctx_t *ctx, char c) {
+    ctx->echo_cb(ctx->user_ctx, '^');
+    ctx->echo_cb(ctx->user_ctx, c + '@');
+}
+
+/*
+ * Erase one character (backspace) using callback
+ */
+static void ldisc_erase_char(ldisc_ctx_t *ctx) {
+    tty_t *tty = ctx->tty;
+
+    if (tty->canon_len == 0) {
+        return;
+    }
+
+    /* Get the character being erased */
+    char erased = tty->canon_buf[tty->canon_len - 1];
+    tty->canon_len--;
+
+    /* Visual echo of erase */
+    if (tty->termios.c_lflag & ECHO) {
+        if (tty->termios.c_lflag & ECHOE) {
+            /* Echo backspace-space-backspace */
+            ctx->echo_cb(ctx->user_ctx, '\b');
+            ctx->echo_cb(ctx->user_ctx, ' ');
+            ctx->echo_cb(ctx->user_ctx, '\b');
+
+            /* If erased char was a control char displayed as ^X, erase that too */
+            if (erased < 32 && erased != '\t' && (tty->termios.c_lflag & ECHOCTL)) {
+                ctx->echo_cb(ctx->user_ctx, '\b');
+                ctx->echo_cb(ctx->user_ctx, ' ');
+                ctx->echo_cb(ctx->user_ctx, '\b');
+            }
+        }
+    }
+}
+
+/*
+ * Kill entire line (Ctrl+U) using callback
+ */
+static void ldisc_kill_line(ldisc_ctx_t *ctx) {
+    tty_t *tty = ctx->tty;
+
+    if (tty->termios.c_lflag & ECHO) {
+        if (tty->termios.c_lflag & ECHOKE) {
+            /* Visual erase entire line */
+            while (tty->canon_len > 0) {
+                ldisc_erase_char(ctx);
+            }
+        } else if (tty->termios.c_lflag & ECHOK) {
+            /* Just echo newline */
+            ctx->echo_cb(ctx->user_ctx, '\n');
+        }
+    }
+    tty->canon_len = 0;
+}
+
+/*
+ * Word erase (Ctrl+W) using callback
+ */
+static void ldisc_word_erase(ldisc_ctx_t *ctx) {
+    tty_t *tty = ctx->tty;
+
+    /* Skip trailing whitespace */
+    while (tty->canon_len > 0 && tty->canon_buf[tty->canon_len - 1] == ' ') {
+        ldisc_erase_char(ctx);
+    }
+    /* Erase word */
+    while (tty->canon_len > 0 && tty->canon_buf[tty->canon_len - 1] != ' ') {
+        ldisc_erase_char(ctx);
+    }
+}
+
+/*
+ * Flush input buffers
+ */
+static void ldisc_flush_input(tty_t *tty) {
+    tty->input_head = 0;
+    tty->input_tail = 0;
+    tty->input_count = 0;
+    tty->canon_len = 0;
+    tty->canon_ready = false;
+    tty->literal_next = false;
+}
+
+/*
+ * Process an input character through line discipline with callbacks
+ * This is the core line discipline function, reusable by PTY
+ */
+void tty_ldisc_input(tty_t *tty, char c,
+                     tty_output_cb_t output_cb,
+                     tty_output_cb_t echo_cb,
+                     tty_signal_cb_t signal_cb,
+                     void *ctx) {
+    /* Set up context for helper functions */
+    ldisc_ctx_t lctx = {
+        .tty = tty,
+        .output_cb = output_cb,
+        .echo_cb = echo_cb,
+        .signal_cb = signal_cb,
+        .user_ctx = ctx
+    };
+
     /* Handle literal next (Ctrl+V) */
     if (tty->literal_next) {
         tty->literal_next = false;
@@ -304,39 +369,39 @@ static void tty_process_input(tty_t *tty, char c) {
         if (c == tty->termios.c_cc[VINTR]) {
             /* Interrupt (Ctrl+C) -> SIGINT */
             if (tty->termios.c_lflag & ECHO) {
-                tty_echo_ctrl(tty, c);
-                tty_output_char('\n');
+                ldisc_echo_ctrl(&lctx, c);
+                echo_cb(ctx, '\n');
             }
             if (!(tty->termios.c_lflag & NOFLSH)) {
-                tty_flush(0);  /* Flush input */
+                ldisc_flush_input(tty);
             }
-            tty_signal_fg(SIGINT);
+            if (signal_cb) signal_cb(ctx, SIGINT);
             return;
         }
 
         if (c == tty->termios.c_cc[VQUIT]) {
             /* Quit (Ctrl+\) -> SIGQUIT */
             if (tty->termios.c_lflag & ECHO) {
-                tty_echo_ctrl(tty, c);
-                tty_output_char('\n');
+                ldisc_echo_ctrl(&lctx, c);
+                echo_cb(ctx, '\n');
             }
             if (!(tty->termios.c_lflag & NOFLSH)) {
-                tty_flush(0);
+                ldisc_flush_input(tty);
             }
-            tty_signal_fg(SIGQUIT);
+            if (signal_cb) signal_cb(ctx, SIGQUIT);
             return;
         }
 
         if (c == tty->termios.c_cc[VSUSP]) {
             /* Suspend (Ctrl+Z) -> SIGTSTP */
             if (tty->termios.c_lflag & ECHO) {
-                tty_echo_ctrl(tty, c);
-                tty_output_char('\n');
+                ldisc_echo_ctrl(&lctx, c);
+                echo_cb(ctx, '\n');
             }
             if (!(tty->termios.c_lflag & NOFLSH)) {
-                tty_flush(0);
+                ldisc_flush_input(tty);
             }
-            tty_signal_fg(SIGTSTP);
+            if (signal_cb) signal_cb(ctx, SIGTSTP);
             return;
         }
     }
@@ -364,27 +429,27 @@ static void tty_process_input(tty_t *tty, char c) {
         if (c == tty->termios.c_cc[VLNEXT]) {
             tty->literal_next = true;
             if (tty->termios.c_lflag & ECHO) {
-                tty_output_char('^');
-                tty_output_char('\b');
+                echo_cb(ctx, '^');
+                echo_cb(ctx, '\b');
             }
             return;
         }
 
         /* Erase character (backspace/delete) */
         if (c == tty->termios.c_cc[VERASE] || c == '\b' || c == 0x7f) {
-            tty_erase_char(tty);
+            ldisc_erase_char(&lctx);
             return;
         }
 
         /* Kill line (Ctrl+U) */
         if (c == tty->termios.c_cc[VKILL]) {
-            tty_kill_line(tty);
+            ldisc_kill_line(&lctx);
             return;
         }
 
         /* Word erase (Ctrl+W) */
         if (c == tty->termios.c_cc[VWERASE]) {
-            tty_word_erase(tty);
+            ldisc_word_erase(&lctx);
             return;
         }
 
@@ -397,10 +462,10 @@ static void tty_process_input(tty_t *tty, char c) {
         /* Reprint line (Ctrl+R) */
         if (c == tty->termios.c_cc[VREPRINT]) {
             if (tty->termios.c_lflag & ECHO) {
-                tty_echo_ctrl(tty, c);
-                tty_output_char('\n');
+                ldisc_echo_ctrl(&lctx, c);
+                echo_cb(ctx, '\n');
                 for (uint32_t i = 0; i < tty->canon_len; i++) {
-                    tty_echo(tty, tty->canon_buf[i]);
+                    ldisc_echo(&lctx, tty->canon_buf[i]);
                 }
             }
             return;
@@ -412,7 +477,7 @@ static void tty_process_input(tty_t *tty, char c) {
             if (tty->canon_len < TTY_CANON_SIZE - 1) {
                 tty->canon_buf[tty->canon_len++] = c;
             }
-            tty_echo(tty, c);
+            ldisc_echo(&lctx, c);
             tty->canon_ready = true;
             return;
         }
@@ -420,7 +485,7 @@ static void tty_process_input(tty_t *tty, char c) {
         /* Regular character in canonical mode */
         if (tty->canon_len < TTY_CANON_SIZE - 1) {
             tty->canon_buf[tty->canon_len++] = c;
-            tty_echo(tty, c);
+            ldisc_echo(&lctx, c);
         }
         return;
     }
@@ -431,8 +496,16 @@ add_char:
         tty->input_buf[tty->input_head] = c;
         tty->input_head = (tty->input_head + 1) % TTY_INPUT_SIZE;
         tty->input_count++;
-        tty_echo(tty, c);
+        ldisc_echo(&lctx, c);
     }
+}
+
+/*
+ * Process an input character through line discipline (console wrapper)
+ */
+static void tty_process_input(tty_t *tty, char c) {
+    tty_ldisc_input(tty, c, console_output_cb, console_output_cb,
+                    console_signal_cb, NULL);
 }
 
 /*
@@ -509,11 +582,10 @@ void tty_input_char(char c) {
 }
 
 /*
- * TTY ioctl
+ * Common TTY ioctl handler (reusable by PTY)
+ * Returns 0 on success, negative error, or 1 if ioctl not handled
  */
-int tty_ioctl(unsigned long request, void *arg) {
-    tty_t *tty = &console_tty;
-
+int tty_ioctl_common(tty_t *tty, unsigned long request, void *arg) {
     switch (request) {
         case TCGETS:
             if (!arg) return -22;  /* EINVAL */
@@ -525,7 +597,13 @@ int tty_ioctl(unsigned long request, void *arg) {
         case TCSETSF:
             if (!arg) return -22;
             if (request == TCSETSF) {
-                tty_flush(0);  /* Flush input */
+                /* Flush input */
+                tty->input_head = 0;
+                tty->input_tail = 0;
+                tty->input_count = 0;
+                tty->canon_len = 0;
+                tty->canon_ready = false;
+                tty->literal_next = false;
             }
             memcpy(&tty->termios, arg, sizeof(termios_t));
             return 0;
@@ -556,9 +634,20 @@ int tty_ioctl(unsigned long request, void *arg) {
             return 0;
 
         default:
-            DEBUG("tty_ioctl: unknown request 0x%lx", request);
-            return -22;  /* EINVAL */
+            return 1;  /* Not handled */
     }
+}
+
+/*
+ * TTY ioctl (console wrapper)
+ */
+int tty_ioctl(unsigned long request, void *arg) {
+    int ret = tty_ioctl_common(&console_tty, request, arg);
+    if (ret == 1) {
+        DEBUG("tty_ioctl: unknown request 0x%lx", request);
+        return -22;  /* EINVAL */
+    }
+    return ret;
 }
 
 /*
