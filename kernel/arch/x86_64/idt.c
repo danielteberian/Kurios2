@@ -77,6 +77,12 @@ extern void irq13(void);
 extern void irq14(void);
 extern void irq15(void);
 
+/* LAPIC and IPI stubs */
+extern void irq16(void);    /* LAPIC Timer (vector 48) */
+extern void irq208(void);   /* IPI Reschedule (vector 240) */
+extern void irq209(void);   /* IPI TLB Shootdown (vector 241) */
+extern void irq210(void);   /* IPI Halt (vector 242) */
+
 /* Exception names for debugging */
 static const char *exception_names[] = {
     "Divide Error",             /* 0 */
@@ -313,6 +319,14 @@ void idt_init(void) {
     idt_set_gate(45, (uint64_t)irq13, GDT_KERNEL_CODE, IST_NONE, IDT_INTERRUPT_GATE);
     idt_set_gate(46, (uint64_t)irq14, GDT_KERNEL_CODE, IST_NONE, IDT_INTERRUPT_GATE);
     idt_set_gate(47, (uint64_t)irq15, GDT_KERNEL_CODE, IST_NONE, IDT_INTERRUPT_GATE);
+
+    /* LAPIC Timer (vector 48) */
+    idt_set_gate(48, (uint64_t)irq16, GDT_KERNEL_CODE, IST_NONE, IDT_INTERRUPT_GATE);
+
+    /* IPI vectors (240-242) */
+    idt_set_gate(240, (uint64_t)irq208, GDT_KERNEL_CODE, IST_NONE, IDT_INTERRUPT_GATE);
+    idt_set_gate(241, (uint64_t)irq209, GDT_KERNEL_CODE, IST_NONE, IDT_INTERRUPT_GATE);
+    idt_set_gate(242, (uint64_t)irq210, GDT_KERNEL_CODE, IST_NONE, IDT_INTERRUPT_GATE);
 
     /* Set up IDT pointer */
     idt_ptr.limit = sizeof(idt) - 1;

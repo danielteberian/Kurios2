@@ -27,11 +27,21 @@
 #define SYS_IOCTL       16
 #define SYS_ACCESS      21
 #define SYS_PIPE        22
+#define SYS_POLL        7
+#define SYS_SELECT      23
 #define SYS_SCHED_YIELD 24
 #define SYS_DUP         32
 #define SYS_DUP2        33
 #define SYS_NANOSLEEP   35
+#define SYS_ALARM       37
 #define SYS_GETPID      39
+#define SYS_SOCKET      41
+#define SYS_CONNECT     42
+#define SYS_ACCEPT      43
+#define SYS_SENDTO      44
+#define SYS_RECVFROM    45
+#define SYS_BIND        49
+#define SYS_LISTEN      50
 #define SYS_FORK        57
 #define SYS_EXECVE      59
 #define SYS_EXIT        60
@@ -48,10 +58,13 @@
 #define SYS_RENAME      82
 #define SYS_MKDIR       83
 #define SYS_RMDIR       84
+#define SYS_LINK        86
 #define SYS_UNLINK      87
+#define SYS_SYMLINK     88
 #define SYS_READLINK    89
 #define SYS_UMASK       95
 #define SYS_GETTIMEOFDAY 96
+#define SYS_GETRLIMIT   97
 #define SYS_GETUID      102
 #define SYS_SYSLOG      103
 #define SYS_GETGID      104
@@ -64,6 +77,7 @@
 #define SYS_GETPGID     121
 #define SYS_SETPGID     109
 #define SYS_GETSID      124
+#define SYS_SETRLIMIT   160
 #define SYS_CLOCK_GETTIME 228
 #define SYS_CLOCK_GETRES  229
 

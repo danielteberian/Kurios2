@@ -943,6 +943,39 @@ static int64_t sys_umask(uint64_t mask, uint64_t arg2, uint64_t arg3,
 }
 
 /*
+ * sys_alarm - set an alarm clock for delivery of SIGALRM
+ *
+ * @param seconds  Number of seconds until SIGALRM (0 cancels any pending alarm)
+ * @return Seconds remaining on previous alarm (0 if none)
+ */
+static int64_t sys_alarm(uint64_t seconds, uint64_t arg2, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    process_t *proc = process_current();
+    if (!proc) {
+        return 0;
+    }
+
+    uint64_t current_ticks = pit_get_ticks();
+    uint64_t old_remaining = 0;
+
+    /* Calculate remaining seconds from previous alarm */
+    if (proc->alarm_ticks > current_ticks) {
+        old_remaining = (proc->alarm_ticks - current_ticks) / 100;  /* 100 Hz PIT */
+    }
+
+    /* Set new alarm or cancel */
+    if (seconds == 0) {
+        proc->alarm_ticks = 0;  /* Cancel alarm */
+    } else {
+        proc->alarm_ticks = current_ticks + (seconds * 100);  /* 100 Hz PIT */
+    }
+
+    return (int64_t)old_remaining;
+}
+
+/*
  * sys_rename - rename a file or directory
  */
 static int64_t sys_rename(uint64_t oldpath, uint64_t newpath, uint64_t arg3,
@@ -2387,6 +2420,7 @@ void syscall_init(void) {
     syscall_register(SYS_DUP2, sys_dup2);
     syscall_register(SYS_FCNTL, sys_fcntl);
     syscall_register(SYS_NANOSLEEP, sys_nanosleep);
+    syscall_register(SYS_ALARM, sys_alarm);
     syscall_register(SYS_EXIT, sys_exit);
     syscall_register(SYS_GETPID, sys_getpid);
     syscall_register(SYS_GETPPID, sys_getppid);
@@ -2419,6 +2453,20 @@ void syscall_init(void) {
     syscall_register(SYS_GETSID, sys_getsid);
     syscall_register(SYS_CLOCK_GETTIME, sys_clock_gettime);
     syscall_register(SYS_CLOCK_GETRES, sys_clock_getres);
+
+    /* Socket syscalls - stub implementations returning ENOSYS */
+    syscall_register(SYS_SOCKET, sys_unimplemented);
+    syscall_register(SYS_CONNECT, sys_unimplemented);
+    syscall_register(SYS_ACCEPT, sys_unimplemented);
+    syscall_register(SYS_SENDTO, sys_unimplemented);
+    syscall_register(SYS_RECVFROM, sys_unimplemented);
+    syscall_register(SYS_BIND, sys_unimplemented);
+    syscall_register(SYS_LISTEN, sys_unimplemented);
+
+    /* Resource limit syscalls - stub implementations returning ENOSYS */
+    syscall_register(SYS_GETRLIMIT, sys_unimplemented);
+    syscall_register(SYS_SETRLIMIT, sys_unimplemented);
+
     /* Note: SYS_FORK and SYS_EXECVE are handled specially in syscall_dispatch */
 
     /*

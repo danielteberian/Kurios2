@@ -86,6 +86,9 @@ typedef struct process {
 
     /* File creation mask */
     uint32_t umask;                 /* File mode creation mask (default 022) */
+
+    /* Alarm timer */
+    uint64_t alarm_ticks;           /* PIT tick when alarm should fire (0 = none) */
 } process_t;
 
 /*

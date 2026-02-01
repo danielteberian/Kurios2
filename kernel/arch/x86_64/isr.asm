@@ -164,6 +164,15 @@ IRQ 14, 46      ; ATA Primary
 IRQ 15, 47      ; ATA Secondary
 
 ;------------------------------------------------------------------------------
+; LAPIC and IPI interrupt handlers (48, 240-242)
+; These use the same IRQ macro since they're external interrupts
+;------------------------------------------------------------------------------
+IRQ 16, 48      ; LAPIC Timer
+IRQ 208, 240    ; IPI Reschedule
+IRQ 209, 241    ; IPI TLB Shootdown
+IRQ 210, 242    ; IPI Halt
+
+;------------------------------------------------------------------------------
 ; idt_flush - Load the IDT register
 ;
 ; void idt_flush(idt_pointer_t *idt_ptr);
