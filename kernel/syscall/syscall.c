@@ -1465,13 +1465,88 @@ static int64_t sys_sigprocmask(uint64_t how, uint64_t set, uint64_t oldset,
 }
 
 /*
- * sys_sigreturn - return from signal handler (stub)
+ * sys_sigreturn_impl - return from signal handler
+ *
+ * Restores the context from the signal frame on the user stack.
+ * This is the inverse of what signal_deliver_pending() does.
+ *
+ * @param frame  Syscall frame to restore into
+ * @return Does not return normally - modifies frame to restore original context
+ */
+static int64_t sys_sigreturn_impl(syscall_frame_t *frame) {
+    process_t *proc = process_current();
+    if (!proc || !proc->signals) {
+        return -ESRCH;
+    }
+
+    /*
+     * The signal frame is on the user stack. When the trampoline called
+     * sigreturn, RSP pointed just above the trampoline code, which is
+     * at the end of signal_frame_t.
+     *
+     * We need to find the signal_frame_t base by subtracting from current RSP.
+     * The user called "syscall" from the trampoline, so RSP is what it was
+     * when they called syscall.
+     */
+
+    /* The trampoline is at the end of signal_frame_t */
+    /* When sigreturn is called, RSP points to just below where the
+     * "ret" would have returned (i.e., at the start of trampoline code) */
+    uint64_t user_rsp = frame->rsp;
+
+    /* Find the signal frame - it's at (rsp - sizeof(trampoline)) rounded down */
+    uint64_t frame_addr = user_rsp - offsetof(signal_frame_t, trampoline);
+
+    DEBUG("Signal: sigreturn from RSP 0x%llx, frame at 0x%llx",
+          (unsigned long long)user_rsp, (unsigned long long)frame_addr);
+
+    /* Read the signal frame from user stack */
+    /* Note: In production, use copy_from_user with proper checks */
+    signal_frame_t *sig_frame = (signal_frame_t *)frame_addr;
+
+    /* Validate frame address */
+    if (frame_addr < 0x1000 || frame_addr >= 0x00007FFFFFFFFFFF) {
+        WARN("Signal: sigreturn with invalid frame address 0x%llx", frame_addr);
+        return -EFAULT;
+    }
+
+    /* Restore registers from signal frame */
+    frame->r15 = sig_frame->r15;
+    frame->r14 = sig_frame->r14;
+    frame->r13 = sig_frame->r13;
+    frame->r12 = sig_frame->r12;
+    frame->rbp = sig_frame->rbp;
+    frame->rbx = sig_frame->rbx;
+    frame->r9 = sig_frame->r9;
+    frame->r8 = sig_frame->r8;
+    frame->r10 = sig_frame->r10;
+    frame->rdx = sig_frame->rdx;
+    frame->rsi = sig_frame->rsi;
+    frame->rdi = sig_frame->rdi;
+    frame->rax = sig_frame->rax;     /* Original return value */
+    frame->rcx = sig_frame->rcx;     /* Original RIP */
+    frame->r11 = sig_frame->r11;     /* Original RFLAGS */
+    frame->rsp = sig_frame->rsp;     /* Original RSP */
+
+    /* Restore blocked signal mask */
+    proc->signals->blocked = sig_frame->saved_mask;
+
+    DEBUG("Signal: sigreturn restoring RIP=0x%llx, RSP=0x%llx, RAX=0x%llx",
+          (unsigned long long)frame->rcx, (unsigned long long)frame->rsp,
+          (unsigned long long)frame->rax);
+
+    /* Return the original syscall return value */
+    return (int64_t)frame->rax;
+}
+
+/*
+ * sys_sigreturn - stub for syscall table (actual work done in dispatch)
  */
 static int64_t sys_sigreturn(uint64_t arg1, uint64_t arg2, uint64_t arg3,
                              uint64_t arg4, uint64_t arg5, uint64_t arg6) {
     (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
-    /* This would restore context saved before signal handler was called */
-    return 0;
+    /* This should never be called - handled specially in syscall_dispatch */
+    return -ENOSYS;
 }
 
 /* ============================================================================
@@ -1987,10 +2062,20 @@ int64_t syscall_dispatch(syscall_frame_t *frame) {
      * Handle syscalls that need the full frame specially
      */
     if (syscall_num == SYS_FORK) {
-        return sys_fork_impl(frame);
+        int64_t result = sys_fork_impl(frame);
+        /* Check for pending signals before returning to user mode */
+        signal_deliver_pending(frame);
+        return result;
     }
     if (syscall_num == SYS_EXECVE) {
-        return sys_execve_impl(frame);
+        int64_t result = sys_execve_impl(frame);
+        /* Check for pending signals before returning to user mode */
+        signal_deliver_pending(frame);
+        return result;
+    }
+    if (syscall_num == SYS_SIGRETURN) {
+        /* sigreturn restores context from signal frame - no signal check after */
+        return sys_sigreturn_impl(frame);
     }
 
     syscall_handler_t handler = syscall_table[syscall_num];
@@ -1998,8 +2083,13 @@ int64_t syscall_dispatch(syscall_frame_t *frame) {
         handler = sys_unimplemented;
     }
 
-    return handler(frame->rdi, frame->rsi, frame->rdx,
-                   frame->r10, frame->r8, frame->r9);
+    int64_t result = handler(frame->rdi, frame->rsi, frame->rdx,
+                             frame->r10, frame->r8, frame->r9);
+
+    /* Check for pending signals before returning to user mode */
+    signal_deliver_pending(frame);
+
+    return result;
 }
 
 /*

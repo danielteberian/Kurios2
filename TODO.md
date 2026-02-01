@@ -46,10 +46,11 @@
 
 ## Next Up
 - [ ] **SMP support** - Multi-core CPU support (uses APIC)
-- [ ] **More syscalls** - Additional Linux-compatible syscalls
 - [ ] **Pipes** - Inter-process communication
+- [ ] **TTY/PTY** - Terminal device support
 
 ## Completed Recently
+- [x] **Signal delivery** - IMPLEMENTED (signal_deliver_pending, sigreturn, SIGCHLD, user handler invocation)
 - [x] **Procfs filesystem** - VERIFIED WORKING (/proc/version, /proc/meminfo, /proc/uptime, /proc/cpuinfo, /proc/stat)
 - [x] **Extended syscalls** - VERIFIED WORKING (30+ syscalls: uname, gettimeofday, clock_gettime, brk, mmap, sigaction, getpgid, etc.)
 - [x] File I/O syscalls - IMPLEMENTED (read/write for VFS files, lseek, fstat, dup, dup2)

@@ -312,6 +312,33 @@
   - 26+ syscall tests in syscall_run_tests()
   - Tests: identity, time, memory, filesystem, I/O, scheduling, signals, error handling
 
+### Signal Delivery [IMPLEMENTED]
+- [2026-02-01] Signal delivery mechanism (`kernel/signal/signal.c`)
+  - signal_deliver_pending() - Delivers pending signals to user handlers
+  - Builds signal frame on user stack with saved context
+  - Redirects execution to user signal handler via syscall frame manipulation
+  - Trampoline code on user stack calls sigreturn to restore context
+  - Handles SA_NODEFER (don't block signal during handler)
+  - Handles SA_RESETHAND (reset handler to SIG_DFL after delivery)
+  - Red zone handling (128 bytes) and 16-byte stack alignment
+  - Default action handling (SIG_DFL terminates process)
+- [2026-02-01] sigreturn implementation (`kernel/syscall/syscall.c`)
+  - sys_sigreturn_impl() - Restores context from signal frame
+  - Reads signal frame from user stack
+  - Restores all callee-saved registers and RAX/RCX/R11/RSP
+  - Restores blocked signal mask
+  - Handled specially in syscall_dispatch (like FORK and EXECVE)
+- [2026-02-01] SIGCHLD support (`kernel/signal/signal.c`)
+  - signal_send_sigchld() - Sends SIGCHLD to parent when child exits
+  - Called from process_exit()
+  - Respects SA_NOCLDSTOP and SIG_IGN settings
+- [2026-02-01] Signal checking in syscall dispatch (`kernel/syscall/syscall.c`)
+  - signal_deliver_pending() called before returning to user mode
+  - Applied after all syscall handlers (except sigreturn)
+- [2026-02-01] Signal frame structure (`kernel/signal/signal.h`)
+  - signal_frame_t with saved registers, signal number, saved mask
+  - Embedded sigreturn trampoline code
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

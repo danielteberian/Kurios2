@@ -304,6 +304,7 @@ void process_exit(process_t *proc, int exit_code) {
 
     uint64_t flags = spin_lock_irqsave(&process_lock);
 
+    pid_t parent_pid = proc->parent_pid;
     proc->state = PROC_ZOMBIE;
     proc->exit_code = exit_code;
 
@@ -311,6 +312,11 @@ void process_exit(process_t *proc, int exit_code) {
 
     DEBUG("Process '%s' PID %u exited with code %d",
           proc->name, proc->pid, exit_code);
+
+    /* Send SIGCHLD to parent process */
+    if (parent_pid != proc->pid) {  /* Don't send to self (kernel process) */
+        signal_send_sigchld(proc->pid, parent_pid);
+    }
 }
 
 /*

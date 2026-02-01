@@ -203,15 +203,49 @@ bool signal_pending(void);
 sigset_t signal_get_pending(void);
 
 /*
+ * Signal frame pushed on user stack when delivering a signal
+ * This is what the user-space signal handler sees on entry.
+ */
+typedef struct signal_frame {
+    /* Saved user context (restored by sigreturn) */
+    uint64_t r15, r14, r13, r12, rbp, rbx;
+    uint64_t r9, r8, r10, rdx, rsi, rdi;
+    uint64_t rax;
+    uint64_t rcx;           /* User RIP */
+    uint64_t r11;           /* User RFLAGS */
+    uint64_t rsp;           /* User RSP (original) */
+
+    /* Signal information */
+    int signum;             /* Signal number */
+    uint32_t _pad;
+    sigset_t saved_mask;    /* Blocked signals to restore */
+
+    /* Return address (points to sigreturn trampoline) */
+    uint64_t trampoline[2]; /* mov rax, SYS_SIGRETURN; syscall */
+} __attribute__((packed)) signal_frame_t;
+
+/*
  * Deliver pending signals (called before returning to user mode)
  * This function may not return if the signal causes termination.
+ *
+ * @param frame  Pointer to the syscall frame (will be modified if signal delivered)
+ * @return true if a signal was delivered (frame modified), false otherwise
  */
-void signal_deliver_pending(void *user_context);
+bool signal_deliver_pending(void *frame);
 
 /*
  * Get default action for a signal
  */
 sig_default_action_t signal_default_action(int signum);
+
+/*
+ * Send SIGCHLD to parent process
+ * Called when a child process exits or stops
+ *
+ * @param child_pid  PID of the child that changed state
+ * @param parent_pid PID of the parent to notify
+ */
+void signal_send_sigchld(uint32_t child_pid, uint32_t parent_pid);
 
 /*
  * Check if signal is valid

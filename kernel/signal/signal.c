@@ -335,26 +335,45 @@ static void handle_default_signal(process_t *proc, int signum)
 /*
  * Deliver pending signals
  * Called before returning to user mode
+ *
+ * This modifies the syscall frame to redirect execution to the signal handler.
+ * When the handler returns, it executes a trampoline that calls sigreturn,
+ * which restores the original context.
+ *
+ * @param frame_ptr  Pointer to syscall_frame_t
+ * @return true if signal was delivered (frame modified), false otherwise
  */
-void signal_deliver_pending(void *user_context)
+bool signal_deliver_pending(void *frame_ptr)
 {
+    /* Import syscall frame structure */
+    typedef struct {
+        uint64_t r15, r14, r13, r12, rbp, rbx;
+        uint64_t r9, r8, r10, rdx, rsi, rdi;
+        uint64_t rax;
+        uint64_t rcx;   /* User RIP */
+        uint64_t r11;   /* User RFLAGS */
+        uint64_t rsp;   /* User RSP */
+    } syscall_frame_t;
+
+    syscall_frame_t *frame = (syscall_frame_t *)frame_ptr;
+
     signal_state_t *state = get_current_signal_state();
     if (!state) {
-        return;
+        return false;
     }
 
     process_t *proc = process_current();
     if (!proc) {
-        return;
+        return false;
     }
 
     /* Find a deliverable signal (pending and not blocked) */
     sigset_t deliverable = state->pending & ~state->blocked;
     if (deliverable == 0) {
-        return;  /* No signals to deliver */
+        return false;  /* No signals to deliver */
     }
 
-    /* Find first pending signal */
+    /* Find first pending signal (lower numbers have priority) */
     int signum = 0;
     for (int i = 1; i < NSIG; i++) {
         if (sigismember(&deliverable, i)) {
@@ -364,38 +383,151 @@ void signal_deliver_pending(void *user_context)
     }
 
     if (signum == 0) {
-        return;  /* No signal found */
+        return false;  /* No signal found */
     }
 
     /* Clear the signal from pending */
     sigdelset(&state->pending, signum);
 
     /* Get the action for this signal */
-    sighandler_t handler = state->actions[signum].sa_handler;
+    sigaction_t *action = &state->actions[signum];
+    sighandler_t handler = action->sa_handler;
 
     if (handler == SIG_IGN) {
         /* Signal is ignored - nothing to do */
-        return;
+        return false;
     }
 
     if (handler == SIG_DFL) {
         /* Default action */
         handle_default_signal(proc, signum);
-        return;
+        /* If process was terminated, we won't return here */
+        return false;
     }
 
     /*
-     * TODO: Invoke user-space signal handler
-     * This requires:
-     * 1. Save current user context
-     * 2. Set up signal frame on user stack
-     * 3. Modify return address to point to signal handler
-     * 4. After handler returns, restore original context via sigreturn
-     *
-     * For now, we just invoke the default action
+     * Deliver signal to user-space handler:
+     * 1. Push signal frame on user stack (saved context + trampoline)
+     * 2. Set RDI = signal number (first argument to handler)
+     * 3. Set RIP = handler address
+     * 4. When handler does "ret", it returns to trampoline
+     * 5. Trampoline calls sigreturn syscall to restore context
      */
-    WARN("Signal: User-space signal handlers not yet implemented");
-    handle_default_signal(proc, signum);
+
+    DEBUG("Signal: Delivering signal %d to PID %u, handler=0x%llx",
+          signum, proc->pid, (unsigned long long)handler);
+
+    /* Calculate where to put signal frame on user stack */
+    /* Align to 16 bytes and leave 128-byte red zone */
+    uint64_t user_rsp = frame->rsp;
+    user_rsp -= 128;                         /* Red zone */
+    user_rsp -= sizeof(signal_frame_t);
+    user_rsp &= ~0xFUL;                      /* 16-byte alignment */
+
+    /* Build the signal frame in kernel memory first */
+    signal_frame_t sig_frame;
+
+    /* Save current register state */
+    sig_frame.r15 = frame->r15;
+    sig_frame.r14 = frame->r14;
+    sig_frame.r13 = frame->r13;
+    sig_frame.r12 = frame->r12;
+    sig_frame.rbp = frame->rbp;
+    sig_frame.rbx = frame->rbx;
+    sig_frame.r9 = frame->r9;
+    sig_frame.r8 = frame->r8;
+    sig_frame.r10 = frame->r10;
+    sig_frame.rdx = frame->rdx;
+    sig_frame.rsi = frame->rsi;
+    sig_frame.rdi = frame->rdi;
+    sig_frame.rax = frame->rax;
+    sig_frame.rcx = frame->rcx;     /* Original RIP */
+    sig_frame.r11 = frame->r11;     /* Original RFLAGS */
+    sig_frame.rsp = frame->rsp;     /* Original RSP */
+
+    /* Signal info */
+    sig_frame.signum = signum;
+    sig_frame._pad = 0;
+    sig_frame.saved_mask = state->blocked;
+
+    /*
+     * Trampoline code:
+     *   mov rax, 15          ; SYS_SIGRETURN = 15
+     *   syscall
+     *
+     * Encoded as:
+     *   48 c7 c0 0f 00 00 00   mov rax, 0xf
+     *   0f 05                  syscall
+     */
+    sig_frame.trampoline[0] = 0x0000000fc0c74800UL | (15UL << 32);  /* mov rax, 15 */
+    sig_frame.trampoline[1] = 0x050f;                               /* syscall */
+
+    /* Copy signal frame to user stack */
+    /* Note: In a real kernel, we'd use copy_to_user with proper checks */
+    signal_frame_t *user_frame = (signal_frame_t *)user_rsp;
+
+    /* Check that user stack is accessible */
+    if (user_rsp < 0x1000 || user_rsp >= 0x00007FFFFFFFFFFF) {
+        WARN("Signal: User stack overflow, terminating process");
+        handle_default_signal(proc, SIGSEGV);
+        return false;
+    }
+
+    /* Copy frame to user stack (assuming user pages are mapped) */
+    memcpy(user_frame, &sig_frame, sizeof(signal_frame_t));
+
+    /* Apply signal mask for handler execution */
+    state->blocked |= action->sa_mask;
+    if (!(action->sa_flags & SA_NODEFER)) {
+        sigaddset(&state->blocked, signum);  /* Block signal during handler */
+    }
+
+    /* Reset handler if SA_RESETHAND */
+    if (action->sa_flags & SA_RESETHAND) {
+        action->sa_handler = SIG_DFL;
+    }
+
+    /* Modify syscall frame to redirect to signal handler */
+    frame->rdi = (uint64_t)signum;                           /* First arg = signal number */
+    frame->rcx = (uint64_t)handler;                          /* RIP = handler address */
+    frame->rsp = user_rsp + sizeof(signal_frame_t) - 16;     /* RSP = just below trampoline */
+
+    /* Set return address to trampoline (handler will "ret" to it) */
+    uint64_t *ret_addr = (uint64_t *)(user_rsp + sizeof(signal_frame_t) - 16);
+    *ret_addr = user_rsp + offsetof(signal_frame_t, trampoline);
+
+    DEBUG("Signal: Frame at 0x%llx, handler 0x%llx, return to trampoline 0x%llx",
+          (unsigned long long)user_rsp,
+          (unsigned long long)handler,
+          (unsigned long long)(user_rsp + offsetof(signal_frame_t, trampoline)));
+
+    return true;
+}
+
+/*
+ * Send SIGCHLD to parent process when child exits/stops
+ */
+void signal_send_sigchld(uint32_t child_pid, uint32_t parent_pid)
+{
+    process_t *parent = process_get_by_pid(parent_pid);
+    if (!parent || !parent->signals) {
+        return;
+    }
+
+    /* Check if parent wants SIGCHLD */
+    sigaction_t *action = &parent->signals->actions[SIGCHLD];
+
+    /* SA_NOCLDSTOP: don't notify for stopped children (we only call this on exit for now) */
+    /* SA_NOCLDWAIT: auto-reap children, but still send signal */
+
+    if (action->sa_handler != SIG_IGN) {
+        /* Add SIGCHLD to pending signals */
+        sigaddset(&parent->signals->pending, SIGCHLD);
+        DEBUG("Signal: Sent SIGCHLD to parent PID %u (child %u exited)", parent_pid, child_pid);
+    }
+
+    /* If parent is blocked waiting, we might want to wake it up */
+    /* For now, the scheduler will handle this on next reschedule */
 }
 
 #ifdef DEBUG_TESTS
