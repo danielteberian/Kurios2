@@ -29,6 +29,7 @@ C_SOURCES := \
     fs/fd_table.c \
     fs/procfs.c \
     fs/pipe.c \
+    fs/ext2.c \
     drivers/keyboard.c \
     drivers/vga.c \
     drivers/pit.c \

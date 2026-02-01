@@ -33,6 +33,7 @@
 #include "fs/vfs.h"
 #include "fs/ramfs.h"
 #include "fs/procfs.h"
+#include "fs/ext2.h"
 #include "lib/string.h"
 #include "boot_info.h"
 #include "acpi/acpi.h"
@@ -425,9 +426,10 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize initrd (if present) - must be before VFS for mounting */
     initrd_init(boot_info);
 
-    /* Initialize VFS and ramfs */
+    /* Initialize VFS and filesystems */
     vfs_init();
     ramfs_init();
+    ext2_init();
 
     /* Mount ramfs at root */
     if (vfs_mount(NULL, "/", "ramfs", 0) == VFS_OK) {

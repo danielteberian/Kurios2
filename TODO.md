@@ -91,13 +91,13 @@
 
 ---
 
-## Phase 2: Block Device Layer
+## Phase 2: Block Device Layer [PARTIAL]
 
-### 2.1 Block Device Abstraction
-- [ ] block_device_t structure (sector size, count, ops)
-- [ ] Block device registration API
-- [ ] Sector read/write interface
-- [ ] Block request queue
+### 2.1 Block Device Abstraction [x]
+- [x] block_device_t structure (sector size, count, ops)
+- [x] Block device registration API
+- [x] Sector read/write interface
+- [ ] Block request queue (async I/O)
 
 ### 2.2 I/O Scheduler
 - [ ] Request merging
@@ -109,8 +109,8 @@
 - [ ] GPT partition table parsing
 - [ ] Partition device creation (/dev/sda1, etc.)
 
-### 2.4 Storage Drivers
-- [ ] Virtio-blk driver (for QEMU)
+### 2.4 Storage Drivers [PARTIAL]
+- [x] Virtio-blk driver (for QEMU, polling mode)
 - [ ] ATA/IDE driver (PIO mode)
 - [ ] AHCI/SATA driver (optional, complex)
 
@@ -133,13 +133,13 @@
 - [ ] Directory operations (mkdir, rmdir)
 - [ ] File creation/deletion
 
-### 3.2 ext2 Filesystem (Alternative to FAT32)
-- [ ] Superblock and group descriptor parsing
-- [ ] Inode reading/writing
-- [ ] Block allocation (bitmap)
-- [ ] Inode allocation (bitmap)
-- [ ] Directory operations
-- [ ] File read/write
+### 3.2 ext2 Filesystem [x]
+- [x] Superblock and group descriptor parsing
+- [x] Inode reading/writing
+- [x] Block allocation (bitmap)
+- [x] Inode allocation (bitmap)
+- [x] Directory operations (readdir, finddir, mkdir, rmdir)
+- [x] File read/write (direct + indirect blocks)
 - [ ] Symbolic links
 
 ### 3.3 Devfs Improvements
@@ -191,12 +191,12 @@
 - [ ] termios structure and operations
 - [ ] tcgetattr()/tcsetattr() via ioctl
 
-### 5.2 PTY (Pseudo-Terminals)
-- [ ] PTY master/slave pair creation
-- [ ] /dev/ptmx multiplexer device
-- [ ] /dev/pts/* slave devices
-- [ ] posix_openpt(), grantpt(), unlockpt(), ptsname()
-- [ ] PTY-specific ioctls (TIOCGPTN, TIOCSPTLCK)
+### 5.2 PTY (Pseudo-Terminals) [x]
+- [x] PTY master/slave pair creation
+- [x] /dev/ptmx multiplexer device
+- [x] /dev/pts/* slave devices
+- [x] PTY-specific ioctls (TIOCGPTN, TIOCSPTLCK)
+- [ ] posix_openpt(), grantpt(), unlockpt(), ptsname() (user-space wrappers)
 
 ### 5.3 Terminal Signals
 - [ ] SIGINT on ^C (to foreground pgrp)
@@ -430,6 +430,16 @@
 - [ ] cmdline_get_param() API
 - [ ] Common options (root=, init=, console=)
 
+### 13.5 Kernel Updates & Live Patching
+- [ ] USB mass storage driver for update media
+- [ ] Network-based kernel updates (HTTP/TFTP)
+- [ ] Kernel image verification (signatures/checksums)
+- [ ] Live patching infrastructure (function replacement)
+- [ ] Ftrace-style function hooking for hot patches
+- [ ] Rollback mechanism for failed patches
+- [ ] kexec() for seamless kernel replacement
+- [ ] Update daemon/service for automated updates
+
 ---
 
 ## Quick Reference: Priority Tasks
@@ -441,7 +451,7 @@
 4. [ ] PTY - Phase 5.2
 5. [ ] Block device layer - Phase 2.1-2.2
 6. [ ] Virtio-blk driver - Phase 2.4
-7. [ ] FAT32 or ext2 - Phase 3
+7. [x] ext2 filesystem - Phase 3.2
 
 ### Medium Priority (Usability)
 8. [ ] Process groups/job control - Phase 4.1-4.2
