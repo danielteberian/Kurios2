@@ -15,7 +15,7 @@
 
 ### Hardware Abstraction
 8. [x] ACPI table parsing (find MADT, HPET, FADT)
-9. [ ] APIC setup (Local APIC + I/O APIC, replace legacy PIC)
+9. [x] APIC setup (Local APIC + I/O APIC, replace legacy PIC)
 10. [x] Timer (PIT at 100Hz)
 11. [x] Basic spinlocks/mutexes
 
@@ -45,10 +45,12 @@
 - None
 
 ## Next Up
-- [ ] **APIC setup** - Local APIC + I/O APIC
 - [ ] **Initial ramdisk** - initrd/initramfs support
+- [ ] **SMP support** - Multi-core CPU support (uses APIC)
+- [ ] **HPET timer** - High-precision timer (already discovered via ACPI)
 
 ## Completed Recently
+- [x] APIC setup - VERIFIED WORKING (Local APIC, I/O APIC, IRQ routing, PIC disabled)
 - [x] ACPI table parsing - VERIFIED WORKING (MADT, FADT, HPET; Local APIC, I/O APIC, IRQ overrides)
 - [x] Per-process file descriptor table - IMPLEMENTED (fd_table.c, fork clones fds, exec closes FD_CLOEXEC)
 - [x] exec() system call - IMPLEMENTED (sys_execve_impl, ELF loading, address space replacement)

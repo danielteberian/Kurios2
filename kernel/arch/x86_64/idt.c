@@ -6,6 +6,7 @@
 #include "io.h"
 #include "../../debug/debug.h"
 #include "../../mm/pmm.h"
+#include "../../apic/apic.h"
 
 /* IDT entries */
 static idt_entry_t idt[IDT_ENTRIES] __attribute__((aligned(16)));
@@ -187,16 +188,22 @@ void exception_handler(cpu_state_t *state) {
 void irq_handler(cpu_state_t *state) {
     uint8_t irq = state->int_no - IRQ_BASE;
 
-    /* Send EOI (End of Interrupt) to PIC BEFORE calling handler
+    /* Send EOI (End of Interrupt) BEFORE calling handler
      * This is important because handlers (like the scheduler) may
      * context switch and never return to this function.
-     * We need the PIC to allow more interrupts. */
-    if (irq >= 8) {
-        /* Send EOI to slave PIC */
-        outb(0xA0, 0x20);
+     * We need the interrupt controller to allow more interrupts. */
+    if (apic_is_enabled()) {
+        /* Send EOI to Local APIC */
+        lapic_eoi();
+    } else {
+        /* Send EOI to legacy PIC */
+        if (irq >= 8) {
+            /* Send EOI to slave PIC */
+            outb(0xA0, 0x20);
+        }
+        /* Send EOI to master PIC */
+        outb(0x20, 0x20);
     }
-    /* Send EOI to master PIC */
-    outb(0x20, 0x20);
 
     /* Call registered handler if any */
     if (handlers[state->int_no]) {

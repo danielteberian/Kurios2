@@ -199,6 +199,18 @@
   - fork() clones parent's fd table to child
   - Fallback to global table before process subsystem initialized
 
+### APIC Setup [VERIFIED]
+- [2026-01-31] APIC subsystem (`kernel/apic/apic.c`, `kernel/apic/apic.h`)
+  - Local APIC initialization (SVR, LVT masking, TPR, error clearing)
+  - I/O APIC initialization (redirection table setup)
+  - IRQ routing with ACPI override support
+  - Legacy 8259 PIC disabled
+  - lapic_eoi() for interrupt acknowledgment
+  - IDT updated to use APIC EOI when enabled
+  - Virtual address mapping at 0xFFFFFFFF90100000+ (outside 2MB pages)
+- [2026-01-31] Verified: All 8 APIC tests pass
+- [2026-01-31] Verified: Timer/keyboard interrupts work via APIC
+
 ### ACPI Table Parsing [VERIFIED]
 - [2026-01-31] ACPI subsystem (`kernel/acpi/acpi.c`, `kernel/acpi/acpi.h`)
   - RSDP discovery (boot-provided hint, EBDA, BIOS ROM search)

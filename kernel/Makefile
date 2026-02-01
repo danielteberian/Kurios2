@@ -34,7 +34,8 @@ C_SOURCES := \
     syscall/syscall.c \
     user/user_entry.c \
     loader/elf_loader.c \
-    acpi/acpi.c
+    acpi/acpi.c \
+    apic/apic.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
@@ -110,6 +111,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/user
 	mkdir -p $(BUILD_DIR)/loader
 	mkdir -p $(BUILD_DIR)/acpi
+	mkdir -p $(BUILD_DIR)/apic
 
 # Ensure directories exist before compiling
 $(BUILD_DIR)/debug/%.o: | $(BUILD_DIR)

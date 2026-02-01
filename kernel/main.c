@@ -30,6 +30,7 @@
 #include "lib/string.h"
 #include "boot_info.h"
 #include "acpi/acpi.h"
+#include "apic/apic.h"
 
 #ifdef DEBUG_TESTS
 /* Test global constructor */
@@ -349,9 +350,17 @@ void kernel_main(BootInfo *boot_info) {
         WARN("ACPI initialization failed - APIC info not available");
     }
 
+    /* Initialize APIC (requires ACPI for addresses) */
+    if (apic_init() != 0) {
+        WARN("APIC initialization failed - using legacy PIC");
+    }
+
 #ifdef DEBUG_TESTS
     /* Run ACPI tests */
     acpi_run_tests();
+
+    /* Run APIC tests */
+    apic_run_tests();
 
     /* Run address space tests (requires slab allocator) */
     as_run_tests();
