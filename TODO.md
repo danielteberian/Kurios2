@@ -38,7 +38,7 @@
 24. [x] Keyboard driver (PS/2, IRQ1, US layout, extended keys)
 25. [x] TTY (/dev/console - VGA output, keyboard input buffer)
 26. [x] /dev/null, /dev/zero, /dev/urandom
-27. [ ] Mouse driver (PS/2)
+27. [x] Mouse driver (PS/2, IRQ12, 3-byte packets)
 
 ### Filesystem
 28. [x] VFS layer (mount, file/dir operations)
@@ -62,10 +62,11 @@
 42. [x] Time: gettimeofday, clock_gettime, clock_getres, nanosleep
 43. [x] IDs: getuid, getgid, geteuid, getegid, setuid, setgid
 44. [x] Sessions: setsid, getsid, getpgid, setpgid
-45. [x] Misc: uname, syslog, umask, truncate, ftruncate, sched_yield
+45. [x] Misc: uname, syslog, umask, truncate, ftruncate, sched_yield, alarm
+46. [x] Stubs: socket, connect, accept, sendto, recvfrom, bind, listen, getrlimit, setrlimit, link, symlink, poll, select
 
 ### Debugging
-46. [x] GDB Stub (remote debugging via COM2, breakpoints, single-stepping)
+47. [x] GDB Stub (remote debugging via COM2, breakpoints, single-stepping)
 
 ---
 
