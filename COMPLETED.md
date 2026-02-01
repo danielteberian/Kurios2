@@ -312,6 +312,12 @@
   - 26+ syscall tests in syscall_run_tests()
   - Tests: identity, time, memory, filesystem, I/O, scheduling, signals, error handling
 
+### Device Nodes [IMPLEMENTED]
+- [2026-02-01] /dev/null and /dev/zero (`kernel/drivers/tty.c`)
+  - /dev/null: Returns EOF on read, discards all writes
+  - /dev/zero: Returns zeros on read, discards all writes
+  - Created during tty_init()
+
 ### Standard I/O [IMPLEMENTED]
 - [2026-02-01] Automatic stdio setup (`kernel/process/process.c`)
   - setup_stdio() connects fd 0/1/2 to /dev/console

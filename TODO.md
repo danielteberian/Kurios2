@@ -50,6 +50,7 @@
 - [ ] **PTY** - Pseudo-terminals for remote shells
 
 ## Completed Recently
+- [x] **/dev/null, /dev/zero** - IMPLEMENTED (null device, zero device)
 - [x] **Standard I/O** - IMPLEMENTED (fd 0/1/2 auto-connected to /dev/console)
 - [x] **TTY** - IMPLEMENTED (/dev/console, VGA output, keyboard input buffer)
 - [x] **Pipes** - IMPLEMENTED (pipe_create, read/write circular buffer, sys_pipe)
