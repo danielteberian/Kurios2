@@ -1,6 +1,7 @@
 /* keyboard.c - PS/2 Keyboard Driver */
 
 #include "keyboard.h"
+#include "tty.h"
 #include "../arch/x86_64/io.h"
 #include "../arch/x86_64/idt.h"
 #include "../arch/x86_64/cpu.h"
@@ -205,6 +206,7 @@ static void keyboard_handler(cpu_state_t *state) {
     char c = scancode_to_char(scancode);
     if (c != 0) {
         kbd_buffer_put(c);
+        tty_input_char(c);  /* Also send to TTY */
     }
 }
 

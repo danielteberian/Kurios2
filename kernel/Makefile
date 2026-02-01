@@ -31,6 +31,7 @@ C_SOURCES := \
     drivers/vga.c \
     drivers/pit.c \
     drivers/hpet.c \
+    drivers/tty.c \
     sched/thread.c \
     sched/sched.c \
     process/process.c \

@@ -17,6 +17,7 @@
 #include "arch/x86_64/serial.h"
 #include "drivers/keyboard.h"
 #include "drivers/vga.h"
+#include "drivers/tty.h"
 #include "drivers/pit.h"
 #include "sched/thread.h"
 #include "sched/sched.h"
@@ -527,6 +528,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize VGA text mode */
     vga_init();
+
+    /* Initialize TTY (/dev/console) */
+    tty_init();
 
     /* Initialize PIT timer at 100 Hz (10ms tick) */
     pit_init(100);

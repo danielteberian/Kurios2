@@ -312,6 +312,17 @@
   - 26+ syscall tests in syscall_run_tests()
   - Tests: identity, time, memory, filesystem, I/O, scheduling, signals, error handling
 
+### TTY [IMPLEMENTED]
+- [2026-02-01] TTY driver (`kernel/drivers/tty.c`, `kernel/drivers/tty.h`)
+  - /dev/console character device created at init
+  - tty_write() - Output to VGA text mode
+  - tty_read() - Read from keyboard input buffer (256 bytes)
+  - tty_input_char() - Called from keyboard IRQ, echoes to screen
+  - Integrated with VFS (open/read/write via file descriptors)
+- [2026-02-01] Keyboard integration
+  - Keyboard handler calls tty_input_char() for printable chars
+  - Characters go to both keyboard buffer and TTY buffer
+
 ### Pipes [IMPLEMENTED]
 - [2026-02-01] Pipe implementation (`kernel/fs/pipe.c`, `kernel/fs/pipe.h`)
   - pipe_t structure with 4KB circular buffer
