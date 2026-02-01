@@ -14,6 +14,7 @@
 #include "../loader/elf_loader.h"
 #include "../fs/vfs.h"
 #include "../fs/fd_table.h"
+#include "../fs/pipe.h"
 #include "../mm/slab.h"
 #include "../drivers/keyboard.h"
 #include "../drivers/pit.h"
@@ -1602,7 +1603,7 @@ static int64_t sys_ioctl(uint64_t fd, uint64_t request, uint64_t arg,
 }
 
 /*
- * sys_pipe - create a pipe (stub)
+ * sys_pipe - create a pipe
  */
 static int64_t sys_pipe(uint64_t pipefd, uint64_t arg2, uint64_t arg3,
                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
@@ -1612,8 +1613,18 @@ static int64_t sys_pipe(uint64_t pipefd, uint64_t arg2, uint64_t arg3,
         return -EFAULT;
     }
 
-    /* Pipes not fully implemented yet */
-    return -ENOSYS;
+    int read_fd, write_fd;
+    int result = pipe_create(&read_fd, &write_fd);
+    if (result < 0) {
+        return result;
+    }
+
+    /* Copy file descriptors to user space */
+    int *user_fds = (int *)pipefd;
+    user_fds[0] = read_fd;
+    user_fds[1] = write_fd;
+
+    return 0;
 }
 
 /*
@@ -2454,6 +2465,47 @@ void syscall_run_tests(void) {
     result = syscall_dispatch(&frame);
     kprintf("  sigprocmask: %s\n", result == 0 ? "OK" : "FAIL");
     if (result == 0) passed++; else failed++;
+
+    /* Test pipe */
+    kprintf("--- Pipes ---\n");
+    int pipefd[2];
+    frame.rax = SYS_PIPE;
+    frame.rdi = (uint64_t)pipefd;
+    result = syscall_dispatch(&frame);
+    kprintf("  pipe: %s (read=%d, write=%d)\n",
+            result == 0 ? "OK" : "FAIL", pipefd[0], pipefd[1]);
+    if (result == 0) passed++; else failed++;
+
+    if (result == 0) {
+        /* Test pipe write */
+        const char *test_msg = "Hello pipe!";
+        frame.rax = SYS_WRITE;
+        frame.rdi = pipefd[1];
+        frame.rsi = (uint64_t)test_msg;
+        frame.rdx = 11;
+        result = syscall_dispatch(&frame);
+        kprintf("  pipe write: %s (wrote %lld bytes)\n",
+                result == 11 ? "OK" : "FAIL", result);
+        if (result == 11) passed++; else failed++;
+
+        /* Test pipe read */
+        char read_buf[32] = {0};
+        frame.rax = SYS_READ;
+        frame.rdi = pipefd[0];
+        frame.rsi = (uint64_t)read_buf;
+        frame.rdx = 32;
+        result = syscall_dispatch(&frame);
+        kprintf("  pipe read: %s (read %lld bytes, got '%s')\n",
+                result == 11 ? "OK" : "FAIL", result, read_buf);
+        if (result == 11) passed++; else failed++;
+
+        /* Close pipe ends */
+        frame.rax = SYS_CLOSE;
+        frame.rdi = pipefd[0];
+        syscall_dispatch(&frame);
+        frame.rdi = pipefd[1];
+        syscall_dispatch(&frame);
+    }
 
     /* Test invalid syscall */
     kprintf("--- Error Handling ---\n");

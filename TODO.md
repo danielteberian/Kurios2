@@ -46,10 +46,11 @@
 
 ## Next Up
 - [ ] **SMP support** - Multi-core CPU support (uses APIC)
-- [ ] **Pipes** - Inter-process communication
 - [ ] **TTY/PTY** - Terminal device support
+- [ ] **User-space shell** - Simple /bin/sh
 
 ## Completed Recently
+- [x] **Pipes** - IMPLEMENTED (pipe_create, read/write circular buffer, sys_pipe)
 - [x] **Signal delivery** - IMPLEMENTED (signal_deliver_pending, sigreturn, SIGCHLD, user handler invocation)
 - [x] **Procfs filesystem** - VERIFIED WORKING (/proc/version, /proc/meminfo, /proc/uptime, /proc/cpuinfo, /proc/stat)
 - [x] **Extended syscalls** - VERIFIED WORKING (30+ syscalls: uname, gettimeofday, clock_gettime, brk, mmap, sigaction, getpgid, etc.)

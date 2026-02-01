@@ -312,6 +312,18 @@
   - 26+ syscall tests in syscall_run_tests()
   - Tests: identity, time, memory, filesystem, I/O, scheduling, signals, error handling
 
+### Pipes [IMPLEMENTED]
+- [2026-02-01] Pipe implementation (`kernel/fs/pipe.c`, `kernel/fs/pipe.h`)
+  - pipe_t structure with 4KB circular buffer
+  - pipe_create() - Creates read and write file descriptors
+  - pipe_read() - Reads from buffer, returns EAGAIN if empty
+  - pipe_write() - Writes to buffer, returns EAGAIN if full, EPIPE if no readers
+  - pipe_close() - Decrements reader/writer count, frees pipe when both zero
+  - Integrated with VFS node system
+- [2026-02-01] sys_pipe syscall (`kernel/syscall/syscall.c`)
+  - Returns two file descriptors [read_fd, write_fd]
+  - Test added to syscall_run_tests()
+
 ### Signal Delivery [IMPLEMENTED]
 - [2026-02-01] Signal delivery mechanism (`kernel/signal/signal.c`)
   - signal_deliver_pending() - Delivers pending signals to user handlers
