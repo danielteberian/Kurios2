@@ -16,6 +16,7 @@
 #include "arch/x86_64/idt.h"
 #include "arch/x86_64/serial.h"
 #include "drivers/keyboard.h"
+#include "drivers/mouse.h"
 #include "drivers/vga.h"
 #include "drivers/tty.h"
 #include "drivers/pit.h"
@@ -525,6 +526,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize keyboard driver */
     keyboard_init();
+
+    /* Initialize PS/2 mouse driver */
+    mouse_init();
 
     /* Initialize VGA text mode */
     vga_init();

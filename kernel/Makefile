@@ -32,6 +32,7 @@ C_SOURCES := \
     drivers/pit.c \
     drivers/hpet.c \
     drivers/tty.c \
+    drivers/mouse.c \
     sched/thread.c \
     sched/sched.c \
     process/process.c \

@@ -2467,6 +2467,14 @@ void syscall_init(void) {
     syscall_register(SYS_GETRLIMIT, sys_unimplemented);
     syscall_register(SYS_SETRLIMIT, sys_unimplemented);
 
+    /* Filesystem link syscalls - stub implementations returning ENOSYS */
+    syscall_register(SYS_LINK, sys_unimplemented);
+    syscall_register(SYS_SYMLINK, sys_unimplemented);
+
+    /* I/O multiplexing syscalls - stub implementations returning ENOSYS */
+    syscall_register(SYS_POLL, sys_unimplemented);
+    syscall_register(SYS_SELECT, sys_unimplemented);
+
     /* Note: SYS_FORK and SYS_EXECVE are handled specially in syscall_dispatch */
 
     /*
