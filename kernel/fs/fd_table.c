@@ -5,6 +5,7 @@
 #include "../mm/slab.h"
 #include "../debug/debug.h"
 #include "../lib/string.h"
+#include "../process/process.h"
 
 /* Slab cache for fd tables */
 static kmem_cache_t *fdt_cache = NULL;
@@ -159,6 +160,20 @@ void fd_table_close_cloexec(fd_table_t *fdt) {
 int fd_table_alloc(fd_table_t *fdt, file_t *file, uint32_t flags) {
     if (!fdt || !file) {
         return -1;
+    }
+
+    /* Check RLIMIT_NOFILE before allocating */
+    process_t *proc = process_current();
+    if (proc) {
+        int open_count = 0;
+        for (int i = 0; i < FD_MAX; i++) {
+            if (fdt->entries[i].file) {
+                open_count++;
+            }
+        }
+        if (open_count >= (int)proc->limits[RLIMIT_NOFILE].rlim_cur) {
+            return -1;  /* Limit exceeded */
+        }
     }
 
     /* Find lowest available fd */

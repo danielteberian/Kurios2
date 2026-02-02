@@ -1417,6 +1417,69 @@ static int64_t sys_times(uint64_t buf, uint64_t arg2, uint64_t arg3,
     return (int64_t)(pit_get_uptime_ms() / 10);  /* Assume 100 Hz ticks */
 }
 
+/*
+ * sys_getrlimit - get resource limits
+ */
+static int64_t sys_getrlimit(uint64_t resource, uint64_t rlim_user, uint64_t arg3,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (resource >= RLIM_NLIMITS) {
+        return -EINVAL;
+    }
+
+    process_t *proc = process_current();
+    if (!proc) {
+        return -ESRCH;
+    }
+
+    struct rlimit *rlim = (struct rlimit *)rlim_user;
+    if (!access_ok(rlim, sizeof(struct rlimit))) {
+        return -EFAULT;
+    }
+
+    return copy_to_user(rlim, &proc->limits[resource], sizeof(struct rlimit));
+}
+
+/*
+ * sys_setrlimit - set resource limits
+ */
+static int64_t sys_setrlimit(uint64_t resource, uint64_t rlim_user, uint64_t arg3,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (resource >= RLIM_NLIMITS) {
+        return -EINVAL;
+    }
+
+    process_t *proc = process_current();
+    if (!proc) {
+        return -ESRCH;
+    }
+
+    struct rlimit new_rlim;
+    struct rlimit *rlim = (struct rlimit *)rlim_user;
+    if (!access_ok(rlim, sizeof(struct rlimit))) {
+        return -EFAULT;
+    }
+    if (copy_from_user(&new_rlim, rlim, sizeof(struct rlimit)) != 0) {
+        return -EFAULT;
+    }
+
+    /* Only root can raise hard limit */
+    if (new_rlim.rlim_max > proc->limits[resource].rlim_max && proc->euid != 0) {
+        return -EPERM;
+    }
+
+    /* Soft limit cannot exceed hard limit */
+    if (new_rlim.rlim_cur > new_rlim.rlim_max) {
+        return -EINVAL;
+    }
+
+    proc->limits[resource] = new_rlim;
+    return 0;
+}
+
 /* ============================================================================
  * NEW SYSCALLS - Memory Management
  * ============================================================================ */
@@ -1474,6 +1537,21 @@ static int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot,
     process_t *proc = process_current();
     if (!proc) {
         return -ESRCH;
+    }
+
+    /* Check RLIMIT_AS (address space limit) */
+    if (proc->as && proc->as->vmas && proc->limits[RLIMIT_AS].rlim_cur != RLIM_INFINITY) {
+        uint64_t current_size = 0;
+        vma_t *vma = proc->as->vmas->head;
+        while (vma) {
+            current_size += vma->end - vma->start;
+            vma = vma->next;
+        }
+        if (current_size + length > proc->limits[RLIMIT_AS].rlim_cur) {
+            DEBUG("sys_mmap: RLIMIT_AS exceeded (%llu + %llu > %llu)",
+                  current_size, length, proc->limits[RLIMIT_AS].rlim_cur);
+            return -ENOMEM;
+        }
     }
 
     /* Handle file-backed mappings */
@@ -2645,6 +2723,20 @@ static int64_t sys_fork_impl(syscall_frame_t *frame) {
         return -ESRCH;
     }
 
+    /* Check RLIMIT_NPROC */
+    uint32_t proc_count = 0;
+    for (uint32_t i = 0; i < MAX_PROCESSES; i++) {
+        process_t *p = process_get_by_pid(i);
+        if (p && p->uid == parent->uid) {
+            proc_count++;
+        }
+    }
+    if (proc_count >= parent->limits[RLIMIT_NPROC].rlim_cur) {
+        DEBUG("sys_fork: RLIMIT_NPROC exceeded (%u >= %llu)",
+              proc_count, parent->limits[RLIMIT_NPROC].rlim_cur);
+        return -EAGAIN;
+    }
+
     INFO("sys_fork: parent PID %u forking", parent->pid);
 
     /*
@@ -3361,9 +3453,9 @@ void syscall_init(void) {
     syscall_register(SYS_GETRUSAGE, sys_getrusage);
     syscall_register(SYS_TIMES, sys_times);
 
-    /* Resource limit syscalls - stub implementations returning ENOSYS */
-    syscall_register(SYS_GETRLIMIT, sys_unimplemented);
-    syscall_register(SYS_SETRLIMIT, sys_unimplemented);
+    /* Resource limit syscalls */
+    syscall_register(SYS_GETRLIMIT, sys_getrlimit);
+    syscall_register(SYS_SETRLIMIT, sys_setrlimit);
 
     /* Filesystem link syscalls */
     syscall_register(SYS_LINK, sys_link);

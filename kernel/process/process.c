@@ -276,6 +276,20 @@ process_t *process_create(const char *name) {
     proc->stop_signal = 0;  /* Not stopped */
     proc->stop_reported = false;  /* Stop not reported */
     proc->continue_reported = false;  /* Continue not reported */
+
+    /* Initialize resource limits to defaults */
+    for (int i = 0; i < RLIM_NLIMITS; i++) {
+        proc->limits[i].rlim_cur = RLIM_INFINITY;
+        proc->limits[i].rlim_max = RLIM_INFINITY;
+    }
+    /* Set reasonable defaults for some limits */
+    proc->limits[RLIMIT_NOFILE].rlim_cur = 1024;
+    proc->limits[RLIMIT_NOFILE].rlim_max = 4096;
+    proc->limits[RLIMIT_NPROC].rlim_cur = 256;
+    proc->limits[RLIMIT_NPROC].rlim_max = 512;
+    proc->limits[RLIMIT_STACK].rlim_cur = 8 * 1024 * 1024;  /* 8MB */
+    proc->limits[RLIMIT_STACK].rlim_max = 16 * 1024 * 1024; /* 16MB */
+
     proc->as = as_create();  /* Create address space with VMA tracking */
     if (proc->as) {
         proc->cr3 = proc->as->cr3;  /* Sync cr3 with address space */

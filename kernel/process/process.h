@@ -23,6 +23,26 @@ typedef uint32_t pid_t;
 /* Maximum number of processes */
 #define MAX_PROCESSES   256
 
+/* Resource limit structures and constants */
+typedef uint64_t rlim_t;
+
+struct rlimit {
+    rlim_t rlim_cur;  /* Soft limit */
+    rlim_t rlim_max;  /* Hard limit (ceiling for rlim_cur) */
+};
+
+#define RLIM_NLIMITS    16
+#define RLIMIT_CPU      0   /* CPU time in seconds */
+#define RLIMIT_FSIZE    1   /* Maximum filesize */
+#define RLIMIT_DATA     2   /* Max data size */
+#define RLIMIT_STACK    3   /* Max stack size */
+#define RLIMIT_CORE     4   /* Max core file size */
+#define RLIMIT_RSS      5   /* Max resident set size */
+#define RLIMIT_NPROC    6   /* Max number of processes */
+#define RLIMIT_NOFILE   7   /* Max number of open files */
+#define RLIMIT_AS       9   /* Address space limit */
+#define RLIM_INFINITY   (~0ULL)
+
 /* Process states */
 typedef enum {
     PROC_UNUSED,        /* Slot is free */
@@ -108,6 +128,9 @@ typedef struct process {
     int stop_signal;                /* Signal that stopped process (valid when STOPPED) */
     bool stop_reported;             /* Parent notified of stop via wait() */
     bool continue_reported;         /* Parent notified of continuation via wait() */
+
+    /* Resource limits */
+    struct rlimit limits[16];       /* POSIX resource limits (RLIM_NLIMITS=16) */
 } process_t;
 
 /*
