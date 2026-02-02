@@ -2,7 +2,7 @@
 
 > **Purpose**: Complete reference of every file in the project. Update this file whenever adding, removing, or significantly changing files.
 >
-> **Last Updated**: 2026-02-02
+> **Last Updated**: 2026-02-01
 
 ---
 
@@ -115,7 +115,7 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 
 | File | Purpose |
 |------|---------|
-| `string.c` | String/memory functions: `strlen`, `strcmp`, `strcpy`, `strncpy`, `strcat`, `strchr`, `strrchr`, `memcpy`, `memmove`, `memset`, `memcmp`, `atoi`, `itoa` |
+| `string.c` | String/memory functions: `strlen`, `strcmp`, `strncmp`, `strcasecmp`, `strcpy`, `strncpy`, `strcat`, `strncat`, `strchr`, `strrchr`, `memcpy`, `memmove`, `memset`, `memcmp`, `snprintf` |
 | `string.h` | String function declarations |
 
 ---
@@ -181,6 +181,8 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 | `ramfs.h` | Ramfs interface: `ramfs_init()`, block size constants |
 | `ext2.c` | ext2 filesystem driver (~1900 lines). Full read/write support. Block mapping (direct/indirect), bitmap allocation, directory operations |
 | `ext2.h` | ext2 on-disk structures: superblock, group descriptors, inodes, directory entries. Constants for magic numbers, file types |
+| `fat32.c` | FAT32 filesystem driver (~1900 lines). Full read/write, LFN support, FAT cache, cluster allocation |
+| `fat32.h` | FAT32 on-disk structures: BPB, FSInfo, directory entries, LFN entries. Cluster constants (FREE, EOC, BAD) |
 | `procfs.c` | /proc virtual filesystem. Provides: `/proc/version`, `/proc/meminfo`, `/proc/uptime`, `/proc/cpuinfo`, `/proc/stat` |
 | `procfs.h` | Procfs interface: `procfs_mount()`, test functions |
 | `pipe.c` | Pipe implementation. 4KB circular buffer, separate read/write ends, EAGAIN/EPIPE handling |
@@ -217,6 +219,8 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 | `io_sched.h` | I/O scheduler interface: `io_scheduler_t`, `io_sched_create()`, `io_sched_add_request()`, `io_sched_dispatch()` |
 | `rtc.c` | CMOS Real-Time Clock driver. Reads date/time, converts to Unix timestamp |
 | `rtc.h` | RTC interface: `rtc_get_unix_time()`, `rtc_get_boot_time()`, `rtc_read_time()` |
+| `partition.c` | MBR/GPT partition table parsing. Auto-scans on device register, creates partition devices |
+| `partition.h` | Partition structures: `mbr_t`, `gpt_header_t`, `partition_dev_t`. `partition_scan()` |
 
 ### kernel/drivers/virtio/ - Virtio Drivers
 
@@ -451,11 +455,11 @@ When adding new files:
 
 ## File Statistics
 
-- **Total source files**: ~115
-- **Kernel C files**: ~60
+- **Total source files**: ~120
+- **Kernel C files**: ~62
 - **Kernel ASM files**: 7
 - **User-space C files**: 5
 - **User-space ASM files**: 1
-- **Header files**: ~55
-- **Kernel size**: ~186KB
+- **Header files**: ~58
+- **Kernel size**: ~199KB
 - **Shell size**: ~12KB

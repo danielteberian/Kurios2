@@ -587,6 +587,72 @@
     - Statistics: requests_added, requests_dispatched, requests_merged
   - Integrated into kernel init via `io_sched_init()` in main.c
 
+### Partition Support [IMPLEMENTED]
+- [2026-02-01] MBR and GPT partition table parsing
+  - **Files:** `kernel/drivers/partition.c`, `kernel/drivers/partition.h`
+  - **MBR Support:**
+    - Reads 4 primary partition entries from sector 0
+    - Validates boot signature (0xAA55)
+    - Handles common partition types (FAT12/16/32, Linux, NTFS)
+    - Detects GPT protective MBR
+  - **GPT Support:**
+    - Validates "EFI PART" signature at LBA 1
+    - Parses up to 128 partition entries
+    - Handles common GPT type GUIDs (EFI System, Basic Data, Linux FS)
+  - **Partition Devices:**
+    - Creates wrapper block devices (vda1, vda2, etc.)
+    - Sector translation from partition offset
+    - Automatic scanning when block device registers
+  - **Integration:**
+    - `partition_init()` called from main.c after block_init()
+    - `partition_scan()` auto-called from block_register()
+
+### FAT32 Filesystem [IMPLEMENTED]
+- [2026-02-01] Full FAT32 filesystem driver (~1900 lines)
+  - **Files:** `kernel/fs/fat32.c`, `kernel/fs/fat32.h`
+  - **BPB/Boot Sector:**
+    - Parses BIOS Parameter Block
+    - Validates FAT32 signature and parameters
+    - Calculates cluster/FAT/data region locations
+    - Reads FSInfo for free cluster hints
+  - **FAT Cache:**
+    - Single-sector FAT cache
+    - Write-through to all FAT copies
+    - Cluster chain traversal
+  - **Cluster Operations:**
+    - `fat32_alloc_cluster()` - find and allocate free cluster
+    - `fat32_free_chain()` - release cluster chain
+    - `fat32_extend_chain()` - grow file/directory
+    - Cluster read/write with sector translation
+  - **Long Filename Support:**
+    - Full LFN entry parsing (13 UTF-16 chars each)
+    - LFN checksum validation
+    - LFN generation for new files with ~N collision handling
+    - UTF-16 to ASCII conversion
+  - **Directory Operations:**
+    - Directory iteration with callback pattern
+    - Find entry by name (case-insensitive)
+    - Add/remove directory entries
+    - mkdir with proper . and .. entries
+    - rmdir with empty check
+  - **File Operations:**
+    - Read with cluster chain following
+    - Write with automatic chain extension
+    - Truncate (shrink or lazy grow)
+    - Stat with size/type/permissions
+  - **VFS Integration:**
+    - Registered as "fat32" filesystem type
+    - Full node_ops for files and directories
+    - Mount via `vfs_mount("vda1", "/mnt", "fat32", 0)`
+  - **Kernel size:** Grew from ~186KB to ~199KB
+
+### String Library Additions [IMPLEMENTED]
+- [2026-02-01] Added string functions for FAT32 support
+  - **File:** `kernel/lib/string.c`, `kernel/lib/string.h`
+  - `strcasecmp()` - case-insensitive string comparison
+  - `strcat()` - string concatenation
+  - `strncat()` - bounded string concatenation
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

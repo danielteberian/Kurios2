@@ -104,10 +104,10 @@
 - [x] Simple elevator algorithm (or NOOP)
 - [x] Async I/O completion callbacks
 
-### 2.3 Partition Support
-- [ ] MBR partition table parsing
-- [ ] GPT partition table parsing
-- [ ] Partition device creation (/dev/sda1, etc.)
+### 2.3 Partition Support [x]
+- [x] MBR partition table parsing
+- [x] GPT partition table parsing
+- [x] Partition device creation (vda1, vda2, etc.)
 
 ### 2.4 Storage Drivers [PARTIAL]
 - [x] Virtio-blk driver (for QEMU, polling mode)
@@ -124,14 +124,14 @@
 
 ## Phase 3: Real Filesystems
 
-### 3.1 FAT32 Filesystem
-- [ ] FAT32 superblock parsing
-- [ ] FAT table reading/caching
-- [ ] Directory entry parsing (8.3 and LFN)
-- [ ] File read support
-- [ ] File write support
-- [ ] Directory operations (mkdir, rmdir)
-- [ ] File creation/deletion
+### 3.1 FAT32 Filesystem [x]
+- [x] FAT32 superblock (BPB) parsing
+- [x] FAT table reading/caching (single-sector cache)
+- [x] Directory entry parsing (8.3 and LFN)
+- [x] File read support
+- [x] File write support
+- [x] Directory operations (mkdir, rmdir)
+- [x] File creation/deletion
 
 ### 3.2 ext2 Filesystem [x]
 - [x] Superblock and group descriptor parsing
@@ -183,13 +183,13 @@
 
 ## Phase 5: TTY Subsystem
 
-### 5.1 Line Discipline
-- [ ] Canonical mode (line buffering)
-- [ ] Raw mode (character-by-character)
-- [ ] Echo control
-- [ ] Special character handling (^C, ^Z, ^D, ^U, ^W)
-- [ ] termios structure and operations
-- [ ] tcgetattr()/tcsetattr() via ioctl
+### 5.1 Line Discipline [x]
+- [x] Canonical mode (line buffering)
+- [x] Raw mode (character-by-character)
+- [x] Echo control
+- [x] Special character handling (^C, ^Z, ^D, ^U, ^W)
+- [x] termios structure and operations
+- [x] tcgetattr()/tcsetattr() via ioctl
 
 ### 5.2 PTY (Pseudo-Terminals) [x]
 - [x] PTY master/slave pair creation
@@ -198,10 +198,10 @@
 - [x] PTY-specific ioctls (TIOCGPTN, TIOCSPTLCK)
 - [ ] posix_openpt(), grantpt(), unlockpt(), ptsname() (user-space wrappers)
 
-### 5.3 Terminal Signals
-- [ ] SIGINT on ^C (to foreground pgrp)
-- [ ] SIGQUIT on ^\ (to foreground pgrp)
-- [ ] SIGTSTP on ^Z (to foreground pgrp)
+### 5.3 Terminal Signals [x]
+- [x] SIGINT on ^C (to foreground pgrp)
+- [x] SIGQUIT on ^\ (to foreground pgrp)
+- [x] SIGTSTP on ^Z (to foreground pgrp)
 - [ ] SIGTTIN/SIGTTOU for background access
 
 ---
@@ -447,11 +447,13 @@
 ### High Priority (Foundation)
 1. [x] COW fork() - Phase 1.2
 2. [x] Demand paging - Phase 1.1
-3. [ ] Line discipline - Phase 5.1
-4. [ ] PTY - Phase 5.2
+3. [x] Line discipline - Phase 5.1
+4. [x] PTY - Phase 5.2
 5. [x] Block device layer - Phase 2.1-2.2
 6. [x] Virtio-blk driver - Phase 2.4
 7. [x] ext2 filesystem - Phase 3.2
+8. [x] Partition support - Phase 2.3
+9. [x] FAT32 filesystem - Phase 3.1
 
 ### Medium Priority (Usability)
 8. [ ] Process groups/job control - Phase 4.1-4.2
@@ -480,7 +482,7 @@
 **Self-hosting development OS** - An OS for development and programming work. Phase 12 (user-space: libc, shell, utilities, tools) is user-owned and off-limits unless explicitly requested.
 
 ### Architecture Decisions Pending
-- Filesystem: FAT32 (simpler) vs ext2 (more Unix-like)?
+- Filesystem: Both FAT32 and ext2 implemented!
 - Network driver: virtio-net (simpler) vs e1000 (more portable)?
 - Libc: Custom minimal vs port musl/newlib?
 
