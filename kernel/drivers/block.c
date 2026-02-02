@@ -1,6 +1,7 @@
 /* block.c - Block Device Layer Implementation */
 
 #include "block.h"
+#include "partition.h"
 #include "../debug/debug.h"
 #include "../mm/slab.h"
 #include "../lib/string.h"
@@ -63,6 +64,15 @@ int block_register(block_device_t *dev) {
     INFO("Registered block device: %s (%llu sectors, %llu MB)",
          dev->name, dev->sector_count,
          dev->capacity / (1024 * 1024));
+
+    /* Scan for partitions (only for whole-disk devices, not partition devices) */
+    /* Partition devices have names like "vda1", whole disks have names like "vda" */
+    int namelen = strlen(dev->name);
+    char last = dev->name[namelen - 1];
+    if (last < '0' || last > '9') {
+        /* Not a partition device - scan for partitions */
+        partition_scan(dev);
+    }
 
     return 0;
 }

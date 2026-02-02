@@ -31,6 +31,7 @@ C_SOURCES := \
     fs/procfs.c \
     fs/pipe.c \
     fs/ext2.c \
+    fs/fat32.c \
     drivers/keyboard.c \
     drivers/vga.c \
     drivers/pit.c \
@@ -44,6 +45,7 @@ C_SOURCES := \
     drivers/rtc.c \
     drivers/virtio/virtio.c \
     drivers/virtio/virtio_blk.c \
+    drivers/partition.c \
     sched/thread.c \
     sched/sched.c \
     process/process.c \

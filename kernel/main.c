@@ -35,6 +35,8 @@
 #include "fs/ramfs.h"
 #include "fs/procfs.h"
 #include "fs/ext2.h"
+#include "fs/fat32.h"
+#include "drivers/partition.h"
 #include "lib/string.h"
 #include "boot_info.h"
 #include "acpi/acpi.h"
@@ -582,6 +584,7 @@ void kernel_main(BootInfo *boot_info) {
     vfs_init();
     ramfs_init();
     ext2_init();
+    fat32_init();
 
     /* Mount ramfs at root */
     if (vfs_mount(NULL, "/", "ramfs", 0) == VFS_OK) {
@@ -710,6 +713,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize block device layer */
     block_init();
+
+    /* Initialize partition subsystem */
+    partition_init();
 
     /* Initialize I/O scheduler */
     io_sched_init();

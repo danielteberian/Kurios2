@@ -31,6 +31,21 @@ int strncmp(const char *s1, const char *s2, size_t n) {
     return (unsigned char)*s1 - (unsigned char)*s2;
 }
 
+static inline int tolower(int c) {
+    if (c >= 'A' && c <= 'Z') {
+        return c + 32;
+    }
+    return c;
+}
+
+int strcasecmp(const char *s1, const char *s2) {
+    while (*s1 && tolower((unsigned char)*s1) == tolower((unsigned char)*s2)) {
+        s1++;
+        s2++;
+    }
+    return tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
+}
+
 char *strcpy(char *dst, const char *src) {
     char *ret = dst;
     while ((*dst++ = *src++)) {
@@ -49,6 +64,30 @@ char *strncpy(char *dst, const char *src, size_t n) {
         *dst++ = '\0';
         n--;
     }
+    return ret;
+}
+
+char *strcat(char *dst, const char *src) {
+    char *ret = dst;
+    while (*dst) {
+        dst++;
+    }
+    while ((*dst++ = *src++)) {
+        /* Copy including null terminator */
+    }
+    return ret;
+}
+
+char *strncat(char *dst, const char *src, size_t n) {
+    char *ret = dst;
+    while (*dst) {
+        dst++;
+    }
+    while (n > 0 && *src) {
+        *dst++ = *src++;
+        n--;
+    }
+    *dst = '\0';
     return ret;
 }
 
