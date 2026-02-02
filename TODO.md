@@ -408,10 +408,10 @@
 ## Phase 13: Miscellaneous
 
 ### 13.1 Time Management
-- [ ] Wall clock time (RTC reading)
+- [x] Wall clock time (RTC reading)
 - [ ] settimeofday() implementation
 - [ ] Timezone support (/etc/localtime)
-- [ ] time() syscall
+- [x] time() syscall (via gettimeofday/clock_gettime)
 
 ### 13.2 Random Number Generator
 - [ ] Entropy pool

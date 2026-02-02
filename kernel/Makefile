@@ -39,6 +39,7 @@ C_SOURCES := \
     drivers/pci.c \
     drivers/block.c \
     drivers/pty.c \
+    drivers/rtc.c \
     drivers/virtio/virtio.c \
     drivers/virtio/virtio_blk.c \
     sched/thread.c \

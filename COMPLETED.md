@@ -440,6 +440,21 @@
   - Also fixed VGA virtual address mapping (0xFFFFFFFF90000000 for kernel-space access)
   - Shell output now displays on both VGA and serial console
 
+### RTC Driver & Real Time [NEW]
+- [2026-02-02] Added CMOS Real-Time Clock driver
+  - **Files:** `kernel/drivers/rtc.c`, `kernel/drivers/rtc.h`
+  - **Features:**
+    - Reads date/time from CMOS RTC (ports 0x70/0x71)
+    - Handles BCD and 12/24 hour formats
+    - Converts to Unix timestamp
+    - `rtc_get_unix_time()` - current Unix timestamp
+    - `rtc_get_boot_time()` - cached boot time
+    - `rtc_read_time()` - full date/time structure
+  - **Syscall fixes:**
+    - `gettimeofday()` now returns real wall clock time
+    - `clock_gettime()` now returns real time for CLOCK_REALTIME
+    - Uses HPET for microsecond precision when available, falls back to PIT
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

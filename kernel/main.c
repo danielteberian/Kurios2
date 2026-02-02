@@ -39,6 +39,7 @@
 #include "acpi/acpi.h"
 #include "apic/apic.h"
 #include "drivers/hpet.h"
+#include "drivers/rtc.h"
 #include "drivers/pci.h"
 #include "drivers/block.h"
 #include "drivers/virtio/virtio.h"
@@ -532,6 +533,9 @@ void kernel_main(BootInfo *boot_info) {
     if (hpet_init() != 0) {
         DEBUG("HPET not available - using PIT for timing");
     }
+
+    /* Initialize RTC for wall clock time */
+    rtc_init();
 
     /* Initialize LAPIC timer (uses HPET for calibration) */
     lapic_timer_init();

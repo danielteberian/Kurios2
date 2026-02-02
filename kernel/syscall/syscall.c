@@ -18,6 +18,8 @@
 #include "../mm/slab.h"
 #include "../drivers/keyboard.h"
 #include "../drivers/pit.h"
+#include "../drivers/rtc.h"
+#include "../drivers/hpet.h"
 #include "../drivers/tty.h"
 #include "../signal/signal.h"
 #include "../arch/x86_64/cpu.h"
@@ -1249,7 +1251,27 @@ static int64_t sys_mprotect(uint64_t addr, uint64_t length, uint64_t prot,
  * ============================================================================ */
 
 /* Boot time in seconds since epoch (placeholder) */
-static uint64_t boot_time_sec = 1706700000;  /* ~Jan 31, 2024 */
+/*
+ * Get current time with microsecond precision using HPET or PIT
+ */
+static void get_current_time(uint64_t *sec, uint64_t *usec) {
+    uint64_t boot_time = rtc_get_boot_time();
+
+    /* Use HPET for better precision if available */
+    if (hpet_is_available()) {
+        uint64_t freq = hpet_get_frequency();
+        uint64_t ticks = hpet_read_counter();
+        uint64_t secs = ticks / freq;
+        uint64_t remainder = ticks % freq;
+        *sec = boot_time + secs;
+        *usec = (remainder * 1000000) / freq;
+    } else {
+        /* Fall back to PIT */
+        uint64_t uptime_ms = pit_get_uptime_ms();
+        *sec = boot_time + uptime_ms / 1000;
+        *usec = (uptime_ms % 1000) * 1000;
+    }
+}
 
 /*
  * sys_gettimeofday - get current time
@@ -1263,10 +1285,10 @@ static int64_t sys_gettimeofday(uint64_t tv, uint64_t tz, uint64_t arg3,
             return -EFAULT;
         }
 
-        uint64_t uptime_ms = pit_get_uptime_ms();
         timeval_t ktv;
-        ktv.tv_sec = boot_time_sec + uptime_ms / 1000;
-        ktv.tv_usec = (uptime_ms % 1000) * 1000;
+        uint64_t usec;
+        get_current_time((uint64_t *)&ktv.tv_sec, &usec);
+        ktv.tv_usec = (long)usec;
 
         if (copy_to_user((void *)tv, &ktv, sizeof(ktv)) < 0) {
             return -EFAULT;
@@ -1299,13 +1321,15 @@ static int64_t sys_clock_gettime(uint64_t clockid, uint64_t tp, uint64_t arg3,
     }
 
     timespec_t kts;
+    uint64_t sec, usec;
     uint64_t uptime_ms = pit_get_uptime_ms();
 
     switch ((int)clockid) {
     case CLOCK_REALTIME:
     case CLOCK_REALTIME_COARSE:
-        kts.tv_sec = boot_time_sec + uptime_ms / 1000;
-        kts.tv_nsec = (uptime_ms % 1000) * 1000000;
+        get_current_time(&sec, &usec);
+        kts.tv_sec = sec;
+        kts.tv_nsec = usec * 1000;
         break;
 
     case CLOCK_MONOTONIC:
