@@ -163,15 +163,15 @@
 - [~] Foreground process group tracking (infrastructure ready)
 - [~] SIGHUP on session leader death (infrastructure ready)
 
-### 4.2 Job Control [~]
+### 4.2 Job Control [x]
 - [x] PROC_STOPPED state for stopped processes
 - [x] SIGTSTP (Ctrl+Z) handling via process_stop()
 - [x] SIGCONT for resuming stopped processes via process_continue()
 - [x] SIGCHLD notification on stop/continue
 - [x] Auto-resume stopped processes on SIGCONT
 - [x] Orphaned process group handling
-- [ ] SIGTTIN/SIGTTOU for background I/O (needs TTY integration)
-- [ ] TTY access control checks (tty_check_read_access/tty_check_write_access)
+- [x] SIGTTIN/SIGTTOU for background I/O
+- [x] TTY access control checks (tty_check_read_access/tty_check_write_access)
 
 ### 4.3 wait() Improvements [x]
 - [x] waitpid() with WUNTRACED flag
@@ -214,7 +214,7 @@
 - [x] SIGINT on ^C (to foreground pgrp)
 - [x] SIGQUIT on ^\ (to foreground pgrp)
 - [x] SIGTSTP on ^Z (to foreground pgrp)
-- [ ] SIGTTIN/SIGTTOU for background access
+- [x] SIGTTIN/SIGTTOU for background access
 
 ---
 
@@ -277,10 +277,10 @@
 
 ## Phase 7: Security Model
 
-### 7.1 File Permissions
+### 7.1 File Permissions [x]
 - [x] Permission bits in inodes (rwxrwxrwx)
 - [x] Owner/group in inodes
-- [ ] Permission checking on open/exec
+- [x] Permission checking on open/exec
 - [x] umask support (already stubbed)
 - [x] chmod()/fchmod() implementation
 - [x] chown()/fchown() implementation

@@ -2640,6 +2640,14 @@ static int64_t sys_execve_impl(syscall_frame_t *frame) {
         return -EIO;
     }
 
+    /* Check execute permission */
+    /* TODO: Proper UID/GID checking when credential system is implemented */
+    if (!(st.permissions & VFS_PERM_EXEC)) {
+        vfs_close(fd);
+        ERROR("sys_execve: '%s' is not executable (permissions: 0x%x)", path, st.permissions);
+        return -EACCES;
+    }
+
     if (st.size > EXEC_MAX_FILE_SIZE) {
         vfs_close(fd);
         ERROR("sys_execve: file too large (%llu bytes)", st.size);

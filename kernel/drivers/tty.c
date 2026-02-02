@@ -7,6 +7,8 @@
 #include "../lib/string.h"
 #include "../signal/signal.h"
 #include "../arch/x86_64/serial.h"
+#include "../process/process.h"
+#include "../process/pgrp.h"
 
 /* Serial port for console output (COM1) */
 #define CONSOLE_SERIAL_PORT 0x3F8
@@ -532,9 +534,104 @@ static void tty_process_input(tty_t *tty, char c) {
 }
 
 /*
+ * Check if current process can read from TTY (background access control)
+ * Returns 0 if allowed, negative error otherwise
+ */
+static int tty_check_read_access(tty_t *tty) {
+    process_t *proc = process_current();
+    if (!proc) {
+        return 0;  /* Kernel thread, allow access */
+    }
+
+    /* Check if process is in foreground group */
+    if (tty->fg_pgrp != 0 && proc->pgrp != tty->fg_pgrp) {
+        /* Background process trying to read */
+
+        /* Check if SIGTTIN is ignored or blocked */
+        if (proc->signals) {
+            sigaction_t *action = &proc->signals->actions[SIGTTIN];
+            bool ignored = (action->sa_handler == SIG_IGN);
+            bool blocked = sigismember(&proc->signals->blocked, SIGTTIN);
+
+            if (ignored) {
+                /* SIGTTIN ignored: return EIO */
+                return -5;  /* EIO */
+            }
+
+            if (!blocked) {
+                /* Send SIGTTIN to process group */
+                DEBUG("TTY: Background read attempt by PID %u (pgrp %u), sending SIGTTIN",
+                      proc->pid, proc->pgrp);
+                pgrp_send_signal(proc->pgrp, SIGTTIN);
+                return -4;  /* EINTR */
+            }
+        }
+
+        /* Signal blocked: return EIO */
+        return -5;  /* EIO */
+    }
+
+    return 0;  /* Foreground process or no foreground group set */
+}
+
+/*
+ * Check if current process can write to TTY (background access control)
+ * Returns 0 if allowed, negative error otherwise
+ */
+static int tty_check_write_access(tty_t *tty) {
+    process_t *proc = process_current();
+    if (!proc) {
+        return 0;  /* Kernel thread, allow access */
+    }
+
+    /* Check TOSTOP flag */
+    if (!(tty->termios.c_lflag & TOSTOP)) {
+        return 0;  /* TOSTOP not set, allow background writes */
+    }
+
+    /* Check if process is in foreground group */
+    if (tty->fg_pgrp != 0 && proc->pgrp != tty->fg_pgrp) {
+        /* Background process trying to write with TOSTOP set */
+
+        /* Check if SIGTTOU is ignored or blocked */
+        if (proc->signals) {
+            sigaction_t *action = &proc->signals->actions[SIGTTOU];
+            bool ignored = (action->sa_handler == SIG_IGN);
+            bool blocked = sigismember(&proc->signals->blocked, SIGTTOU);
+
+            if (ignored) {
+                /* SIGTTOU ignored: allow write */
+                return 0;
+            }
+
+            if (!blocked) {
+                /* Send SIGTTOU to process group */
+                DEBUG("TTY: Background write attempt by PID %u (pgrp %u), sending SIGTTOU",
+                      proc->pid, proc->pgrp);
+                pgrp_send_signal(proc->pgrp, SIGTTOU);
+                return -4;  /* EINTR */
+            }
+        }
+
+        /* Signal blocked: return EIO */
+        return -5;  /* EIO */
+    }
+
+    return 0;  /* Foreground process or no foreground group set */
+}
+
+/*
  * Write to TTY (VGA output with processing)
  */
 int64_t tty_write(const void *buf, size_t size) {
+    tty_t *tty = &console_tty;
+
+    /* Check background write access */
+    int access = tty_check_write_access(tty);
+    if (access < 0) {
+        return access;
+    }
+
     const char *str = (const char *)buf;
     for (size_t i = 0; i < size; i++) {
         tty_output_char(str[i]);
@@ -549,6 +646,12 @@ int64_t tty_read(void *buf, size_t size) {
     tty_t *tty = &console_tty;
     char *dst = (char *)buf;
     size_t bytes_read = 0;
+
+    /* Check background read access */
+    int access = tty_check_read_access(tty);
+    if (access < 0) {
+        return access;
+    }
 
     if (tty->termios.c_lflag & ICANON) {
         /* Canonical mode: wait for line */

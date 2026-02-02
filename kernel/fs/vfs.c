@@ -97,6 +97,43 @@ void vfs_node_unref(vfs_node_t *node) {
 }
 
 /*
+ * Permission Checking Helper
+ * Returns 0 if access allowed, negative error otherwise
+ *
+ * For now, this just checks the permission bits.
+ * TODO: Add UID/GID checking when credential system is implemented.
+ */
+static int vfs_check_permission(vfs_node_t *node, uint32_t access_mode) {
+    if (!node) {
+        return VFS_EINVAL;
+    }
+
+    /* Devices and directories always allow access for now */
+    if (node->type == VFS_CHARDEV || node->type == VFS_BLKDEV ||
+        node->type == VFS_DIR) {
+        return VFS_OK;
+    }
+
+    /* Check permission bits */
+    uint32_t required = 0;
+    if (access_mode & O_RDWR) {
+        required = VFS_PERM_READ | VFS_PERM_WRITE;
+    } else if (access_mode & O_WRONLY) {
+        required = VFS_PERM_WRITE;
+    } else {
+        required = VFS_PERM_READ;
+    }
+
+    /* For now, check against world permissions (last 3 bits) */
+    /* TODO: Check owner/group permissions based on UID/GID */
+    if ((node->permissions & required) != required) {
+        return -13;  /* EACCES */
+    }
+
+    return VFS_OK;
+}
+
+/*
  * Filesystem Registration
  */
 int vfs_register_fs(fs_ops_t *fs) {
@@ -488,6 +525,13 @@ int vfs_open(const char *path, uint32_t flags) {
     if ((flags & O_DIRECTORY) && node->type != VFS_DIR) {
         vfs_node_unref(node);
         return VFS_ENOTDIR;
+    }
+
+    /* Check permissions */
+    int perm_err = vfs_check_permission(node, flags & O_ACCMODE);
+    if (perm_err != VFS_OK) {
+        vfs_node_unref(node);
+        return perm_err;
     }
 
     /* Create file structure first */

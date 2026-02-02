@@ -6,6 +6,8 @@
 #include "../lib/string.h"
 #include "../signal/signal.h"
 #include "../mm/slab.h"
+#include "../process/process.h"
+#include "../process/pgrp.h"
 
 /* PTY table - static array of PTY slots */
 static pty_t pty_table[PTY_MAX];
@@ -408,6 +410,91 @@ static int pty_slave_open(vfs_node_t *node, uint32_t flags) {
 }
 
 /*
+ * Check if current process can read from PTY slave (background access control)
+ */
+static int pty_check_read_access(tty_t *tty) {
+    process_t *proc = process_current();
+    if (!proc) {
+        return 0;  /* Kernel thread, allow access */
+    }
+
+    /* Check if process is in foreground group */
+    if (tty->fg_pgrp != 0 && proc->pgrp != tty->fg_pgrp) {
+        /* Background process trying to read */
+
+        /* Check if SIGTTIN is ignored or blocked */
+        if (proc->signals) {
+            sigaction_t *action = &proc->signals->actions[SIGTTIN];
+            bool ignored = (action->sa_handler == SIG_IGN);
+            bool blocked = sigismember(&proc->signals->blocked, SIGTTIN);
+
+            if (ignored) {
+                /* SIGTTIN ignored: return EIO */
+                return -5;  /* EIO */
+            }
+
+            if (!blocked) {
+                /* Send SIGTTIN to process group */
+                DEBUG("PTY: Background read attempt by PID %u (pgrp %u), sending SIGTTIN",
+                      proc->pid, proc->pgrp);
+                pgrp_send_signal(proc->pgrp, SIGTTIN);
+                return -4;  /* EINTR */
+            }
+        }
+
+        /* Signal blocked: return EIO */
+        return -5;  /* EIO */
+    }
+
+    return 0;  /* Foreground process or no foreground group set */
+}
+
+/*
+ * Check if current process can write to PTY slave (background access control)
+ */
+static int pty_check_write_access(tty_t *tty) {
+    process_t *proc = process_current();
+    if (!proc) {
+        return 0;  /* Kernel thread, allow access */
+    }
+
+    /* Check TOSTOP flag */
+    if (!(tty->termios.c_lflag & TOSTOP)) {
+        return 0;  /* TOSTOP not set, allow background writes */
+    }
+
+    /* Check if process is in foreground group */
+    if (tty->fg_pgrp != 0 && proc->pgrp != tty->fg_pgrp) {
+        /* Background process trying to write with TOSTOP set */
+
+        /* Check if SIGTTOU is ignored or blocked */
+        if (proc->signals) {
+            sigaction_t *action = &proc->signals->actions[SIGTTOU];
+            bool ignored = (action->sa_handler == SIG_IGN);
+            bool blocked = sigismember(&proc->signals->blocked, SIGTTOU);
+
+            if (ignored) {
+                /* SIGTTOU ignored: allow write */
+                return 0;
+            }
+
+            if (!blocked) {
+                /* Send SIGTTOU to process group */
+                DEBUG("PTY: Background write attempt by PID %u (pgrp %u), sending SIGTTOU",
+                      proc->pid, proc->pgrp);
+                pgrp_send_signal(proc->pgrp, SIGTTOU);
+                return -4;  /* EINTR */
+            }
+        }
+
+        /* Signal blocked: return EIO */
+        return -5;  /* EIO */
+    }
+
+    return 0;  /* Foreground process or no foreground group set */
+}
+
+/*
  * Slave read - returns data from m2s buffer or canon_buf
  */
 static ssize_t pty_slave_read(vfs_node_t *node, void *buf, size_t size, uint64_t offset) {
@@ -415,6 +502,12 @@ static ssize_t pty_slave_read(vfs_node_t *node, void *buf, size_t size, uint64_t
 
     pty_t *pty = (pty_t *)node->private;
     if (!pty || !pty->allocated) return -9;  /* EBADF */
+
+    /* Check background read access */
+    int access = pty_check_read_access(&pty->tty);
+    if (access < 0) {
+        return access;
+    }
 
     char *dst = (char *)buf;
     size_t bytes_read = 0;
@@ -470,6 +563,12 @@ static ssize_t pty_slave_write(vfs_node_t *node, const void *buf, size_t size, u
 
     pty_t *pty = (pty_t *)node->private;
     if (!pty || !pty->allocated) return -9;  /* EBADF */
+
+    /* Check background write access */
+    int access = pty_check_write_access(&pty->tty);
+    if (access < 0) {
+        return access;
+    }
 
     /* If master closed, return EPIPE */
     if (pty->master_refs == 0) {

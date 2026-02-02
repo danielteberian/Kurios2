@@ -781,3 +781,44 @@
     - Continued: `0xffff`
   - **Reporting:** Marks children as stop_reported/continue_reported to avoid duplicates
   - **WNOHANG:** Returns 0 if no state change, not blocking
+
+### TTY Background Access Control (Phase 4.2 & 5.3) [IMPLEMENTED]
+- [2026-02-01] SIGTTIN/SIGTTOU for background TTY access
+  - **Files:** `kernel/drivers/tty.c`, `kernel/drivers/pty.c`
+  - **Console TTY access control:**
+    - `tty_check_read_access()` - Checks foreground group on read
+    - `tty_check_write_access()` - Checks foreground group on write (if TOSTOP set)
+  - **PTY access control:**
+    - `pty_check_read_access()` - Same checks for PTY slave reads
+    - `pty_check_write_access()` - Same checks for PTY slave writes
+  - **SIGTTIN behavior:**
+    - Sent to background process group on read attempt
+    - If ignored: return EIO
+    - If blocked: return EIO
+    - Otherwise: send signal and return EINTR
+  - **SIGTTOU behavior:**
+    - Only sent if TOSTOP termios flag is set
+    - Sent to background process group on write attempt
+    - If ignored: allow write
+    - If blocked: return EIO
+    - Otherwise: send signal and return EINTR
+  - **Integration:** Both console TTY and PTY slaves respect foreground process groups
+
+### File Permission Checking (Phase 7.1) [IMPLEMENTED]
+- [2026-02-01] Permission enforcement on file operations
+  - **Files:** `kernel/fs/vfs.c`, `kernel/syscall/syscall.c`
+  - **New function:**
+    - `vfs_check_permission(node, access_mode)` - Validates file access
+  - **Permission bits checked:**
+    - VFS_PERM_READ (0x04) - Read permission
+    - VFS_PERM_WRITE (0x02) - Write permission
+    - VFS_PERM_EXEC (0x01) - Execute permission
+  - **Integration points:**
+    - `vfs_open()` - Checks read/write permission based on O_RDONLY/O_WRONLY/O_RDWR
+    - `sys_execve()` - Checks execute permission before loading ELF
+  - **Error codes:**
+    - Returns EACCES (-13) if permission denied
+  - **Notes:**
+    - Currently checks world permissions (last 3 bits)
+    - Devices and directories always allowed (for now)
+    - Full UID/GID checking deferred until credential system implemented
