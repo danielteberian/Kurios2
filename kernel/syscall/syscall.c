@@ -213,8 +213,8 @@ static int64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
 /*
  * sys_write - write to a file descriptor
  *
- * For stdout/stderr (fd 1, 2): outputs to serial console
- * For other fds: writes to VFS
+ * Uses the process fd table to write through VFS, which allows
+ * stdout/stderr to properly go through TTY to both VGA and serial.
  */
 #define WRITE_CHUNK_SIZE 256
 
@@ -229,65 +229,37 @@ static int64_t sys_write(uint64_t fd, uint64_t buf, uint64_t count,
         return -EFAULT;
     }
 
-    /* Handle stdout/stderr - output to serial console */
-    if (fd == 1 || fd == 2) {
-        char kbuf[WRITE_CHUNK_SIZE];
-        uint64_t written = 0;
-
-        while (written < count) {
-            /* Copy chunk from user space */
-            uint64_t chunk = count - written;
-            if (chunk > WRITE_CHUNK_SIZE) {
-                chunk = WRITE_CHUNK_SIZE;
-            }
-
-            int err = copy_from_user(kbuf, (const void *)(buf + written), chunk);
-            if (err < 0) {
-                return written > 0 ? (int64_t)written : err;
-            }
-
-            /* Output to console */
-            for (uint64_t i = 0; i < chunk; i++) {
-                kprintf("%c", kbuf[i]);
-            }
-
-            written += chunk;
-        }
-
-        return (int64_t)written;
-    }
-
-    /* Handle VFS files (fd > 2) */
-    if (fd > 2) {
-        char kbuf[WRITE_CHUNK_SIZE];
-        uint64_t total = 0;
-
-        while (total < count) {
-            uint64_t chunk = count - total;
-            if (chunk > WRITE_CHUNK_SIZE) {
-                chunk = WRITE_CHUNK_SIZE;
-            }
-
-            if (copy_from_user(kbuf, (const char *)buf + total, chunk) < 0) {
-                return total > 0 ? (int64_t)total : -EFAULT;
-            }
-
-            ssize_t n = vfs_write((int)fd, kbuf, chunk);
-            if (n < 0) {
-                return total > 0 ? (int64_t)total : (int64_t)n;
-            }
-
-            total += n;
-            if ((uint64_t)n < chunk) {
-                break;  /* Short write */
-            }
-        }
-
-        return (int64_t)total;
-    }
-
     /* fd 0 (stdin) is not writable */
-    return -EBADF;
+    if (fd == 0) {
+        return -EBADF;
+    }
+
+    /* Write through VFS - handles stdout/stderr via /dev/console TTY */
+    char kbuf[WRITE_CHUNK_SIZE];
+    uint64_t total = 0;
+
+    while (total < count) {
+        uint64_t chunk = count - total;
+        if (chunk > WRITE_CHUNK_SIZE) {
+            chunk = WRITE_CHUNK_SIZE;
+        }
+
+        if (copy_from_user(kbuf, (const char *)buf + total, chunk) < 0) {
+            return total > 0 ? (int64_t)total : -EFAULT;
+        }
+
+        ssize_t n = vfs_write((int)fd, kbuf, chunk);
+        if (n < 0) {
+            return total > 0 ? (int64_t)total : (int64_t)n;
+        }
+
+        total += n;
+        if ((uint64_t)n < chunk) {
+            break;  /* Short write */
+        }
+    }
+
+    return (int64_t)total;
 }
 
 /*

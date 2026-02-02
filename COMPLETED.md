@@ -429,6 +429,17 @@
     using vmm_map_pages() before accessing
   - Shell now loads from initrd correctly
 
+### VGA Output Bug Fix [FIXED]
+- [2026-02-01] Fixed VGA output for shell/user processes
+  - **Bug:** Shell output appeared only in serial console, not on VGA display
+  - **Root cause:** `sys_write()` in syscall.c bypassed VFS for fd 1/2 (stdout/stderr)
+    and used `kprintf()` directly, which only outputs to serial via debug system
+  - **Fix:** Changed `sys_write()` to use `vfs_write()` for all writable fds
+    - fd 1/2 now go through the proper path: vfs_write -> /dev/console -> tty_write
+      -> tty_output_char -> vga_putc() AND serial_putc()
+  - Also fixed VGA virtual address mapping (0xFFFFFFFF90000000 for kernel-space access)
+  - Shell output now displays on both VGA and serial console
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

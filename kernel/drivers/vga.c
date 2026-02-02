@@ -66,7 +66,7 @@ void vga_init(void) {
 
     vga_buffer = (volatile uint16_t *)VGA_VIRT_ADDR;
 
-    /* Clear screen and reset cursor */
+    /* Clear screen */
     vga_clear();
 
     INFO("VGA initialized: virt 0x%llx -> phys 0x%llx", (uint64_t)VGA_VIRT_ADDR, (uint64_t)VGA_PHYS_ADDR);
