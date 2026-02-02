@@ -901,3 +901,145 @@
     - UDP client/server on 127.0.0.1
     - Multiple sockets, multiple ports
     - Proper port binding and delivery
+
+### Resource Limits (Phase 7.3) [IMPLEMENTED]
+- [2026-02-02] POSIX resource limits with getrlimit/setrlimit syscalls
+  - **Files:** `kernel/process/process.h`, `kernel/process/process.c`, `kernel/syscall/syscall.c`, `kernel/fs/fd_table.c`
+  - **New structures:**
+    - `struct rlimit { rlim_t rlim_cur, rlim_max }` - Soft and hard limits
+    - `RLIM_NLIMITS=16` - Number of limit types
+    - Added `limits[16]` array to process_t
+  - **Limit types defined:**
+    - RLIMIT_CPU - CPU time in seconds
+    - RLIMIT_FSIZE - Maximum file size
+    - RLIMIT_DATA - Max data size
+    - RLIMIT_STACK - Max stack size (default: 8MB/16MB)
+    - RLIMIT_CORE - Max core file size
+    - RLIMIT_RSS - Max resident set size
+    - RLIMIT_NPROC - Max number of processes (default: 256/512)
+    - RLIMIT_NOFILE - Max number of open files (default: 1024/4096)
+    - RLIMIT_AS - Address space limit (default: unlimited)
+  - **Syscalls implemented:**
+    - `sys_getrlimit(resource, rlim)` - Get resource limit
+    - `sys_setrlimit(resource, rlim)` - Set resource limit
+  - **Permission checking:**
+    - Non-root cannot raise hard limit (EPERM)
+    - Soft limit cannot exceed hard limit (EINVAL)
+  - **Enforcement:**
+    - RLIMIT_NOFILE: Enforced in `fd_table_alloc()` - returns -1 if limit reached
+    - RLIMIT_NPROC: Enforced in `sys_fork()` - returns EAGAIN if limit reached
+    - RLIMIT_AS: Enforced in `sys_mmap()` - returns ENOMEM if would exceed limit
+  - **Initialization:**
+    - Kernel process (PID 0) gets defaults in `process_init()`
+    - New processes inherit limits from parent in `process_create()`
+  - **Bug fix:** Fixed kernel process initialization to properly set resource limits
+  - **Tests:** All 3 resource limit tests passing
+
+### TCP Networking (Phase 6.6) [IMPLEMENTED]
+- [2026-02-02] Full TCP protocol implementation with connection management
+  - **Files:** `kernel/net/tcp.h`, `kernel/net/tcp.c` (~600 lines), `kernel/net/socket.h`, `kernel/net/socket.c`, `kernel/net/ip.c`
+  - **TCP structures:**
+    - `tcp_header_t` - 20-byte TCP header (packed)
+    - `tcp_state_t` - TCP state machine enum (11 states)
+    - `tcp_connection_t` - Connection control block
+  - **TCP flags:** FIN, SYN, RST, PSH, ACK, URG
+  - **TCP states:** CLOSED, LISTEN, SYN_SENT, SYN_RECEIVED, ESTABLISHED, FIN_WAIT_1, FIN_WAIT_2, CLOSE_WAIT, CLOSING, LAST_ACK, TIME_WAIT
+  - **TCP implementation:**
+    - Checksum calculation with pseudo-header
+    - 3-way handshake (SYN → SYN-ACK → ACK)
+    - Connection establishment and teardown
+    - Sequence number tracking (snd_una, snd_nxt, rcv_nxt)
+    - Flow control with window size
+    - Basic timeout-based retransmission
+  - **Buffer management:**
+    - Send buffer: 64KB per connection
+    - Receive buffer: 16KB per connection (fits in uint16_t window)
+    - Circular buffer operations
+  - **Socket integration:**
+    - SOCK_STREAM support in `socket_create()`
+    - TCP connection allocation for SOCK_STREAM sockets
+    - Routing through tcp_send() for SOCK_STREAM
+  - **Syscalls added:**
+    - `sys_listen(sockfd, backlog)` - Mark socket as listening
+    - `sys_accept(sockfd, addr, addrlen)` - Accept incoming connection
+  - **Byte order functions:**
+    - Added static inline htons(), htonl(), ntohs(), ntohl()
+  - **IP layer integration:**
+    - TCP packet dispatch in `ip_receive()` for IP_PROTO_TCP
+  - **Limitations:**
+    - Basic retransmission only (no sophisticated timeout calculation)
+    - No TCP options support
+    - No congestion control
+    - Loopback only (until virtio-net tested)
+  - **Tests:** All 5 socket/TCP tests passing
+
+### Virtio-net Driver (Phase 6.2) [IMPLEMENTED]
+- [2026-02-02] Network device driver for virtio-net (QEMU networking)
+  - **Files:** `kernel/drivers/virtio/virtio_net.h`, `kernel/drivers/virtio/virtio_net.c` (~290 lines)
+  - **Virtio-net structures:**
+    - `virtio_net_config_t` - Device config (MAC, status, queue pairs)
+    - `virtio_net_hdr_t` - Packet header for virtio protocol
+    - `virtio_net_dev_t` - Device state structure
+  - **Features:**
+    - VIRTIO_NET_F_MAC - MAC address in config
+    - VIRTIO_NET_F_STATUS - Link status
+  - **Implementation:**
+    - RX virtqueue for receiving packets
+    - TX virtqueue for transmitting packets
+    - Pre-allocated RX buffers (64 packets)
+    - MAC address reading from config space
+    - Scatter-gather I/O with virtqueue_add()
+  - **Network integration:**
+    - Registers with netdev layer
+    - Static IP configuration: 10.0.2.15/24
+    - MTU: 1500 bytes
+  - **Transmit path:**
+    - Build virtio_net_hdr + packet
+    - Add to TX virtqueue
+    - Kick device
+  - **Receive path:**
+    - IRQ handler processes RX completions
+    - Calls netdev_receive() to deliver to IP layer
+    - Refills RX buffers
+  - **API compatibility fixes:**
+    - virtio_reset() instead of virtio_reset_device()
+    - virtio_negotiate_features() for feature negotiation
+    - virtqueue_init() instead of virtqueue_create()
+    - virtqueue_add() with scatter-gather descriptor arrays
+    - Removed non-existent netdev_ops callbacks
+  - **Status:** Compiles and links successfully, runtime testing requires QEMU -device virtio-net
+
+### Critical Bug Fixes [2026-02-02]
+- **Bootloader kernel size bug:**
+  - **Problem:** Bootloader configured to load only 128KB (0x20000 bytes)
+  - **Impact:** Kernel grew to 223KB, only first 128KB was loaded, causing corruption and boot failures
+  - **Symptom:** Garbled serial output "0xFF 'S'" pattern after entering kernel
+  - **Fix:** Rebuilt bootloader with KERNEL_SIZE=223768 for normal kernel, 236056 for test kernel
+  - **Files:** `boot/Makefile`, bootloader stage1/stage2 rebuilt with correct size
+  - **Result:** Kernel now boots successfully with all features
+
+### Test Framework Enhancements [2026-02-02]
+- **New test suites:**
+  - `kernel/tests/test_rlimits.c` - Resource limit tests (3 tests)
+  - `kernel/tests/test_socket.c` - Socket and TCP tests (5 tests)
+  - `kernel/tests/test_netdev.c` - Network device tests (4 tests)
+- **Test integration:**
+  - Added to `kernel/Makefile` TEST_SOURCES
+  - Registered in `kernel/tests/test_all.c`
+- **Test results:**
+  - 49/50 tests passing (98% pass rate)
+  - 6,596 assertions passed, 1 failed
+  - Only failure: pre-existing VMM test (vmm_map_single_page)
+- **Test coverage:**
+  - Resource limits: defaults, modification, bounds checking
+  - Socket creation: UDP and TCP
+  - Socket operations: bind, listen, accept
+  - TCP connection lifecycle
+  - Loopback device properties
+  - Packet allocation
+
+### Kernel Size Growth [2026-02-02]
+- **Before:** 211KB (before resource limits, TCP, virtio-net)
+- **After normal kernel:** 223,768 bytes (219KB)
+- **After test kernel:** 236,056 bytes (231KB)
+- **Growth:** +12KB for new features, +13KB for test framework

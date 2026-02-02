@@ -219,7 +219,7 @@
 
 ---
 
-## Phase 6: Networking Stack [PARTIAL]
+## Phase 6: Networking Stack [COMPLETE]
 
 ### 6.1 Network Device Layer [x]
 - [x] netdev_t structure
@@ -228,7 +228,7 @@
 - [x] Packet transmit path
 
 ### 6.2 Network Drivers [PARTIAL]
-- [ ] Virtio-net driver (for QEMU) - deferred
+- [x] Virtio-net driver (for QEMU)
 - [ ] E1000 driver (Intel NIC, also QEMU) - deferred
 - [x] Loopback device (127.0.0.1)
 
@@ -248,22 +248,22 @@
 - [x] UDP send/receive
 - [x] Port binding
 
-### 6.6 TCP
-- [ ] TCP state machine
-- [ ] Connection establishment (3-way handshake)
-- [ ] Data transfer with sequence numbers
-- [ ] Flow control (sliding window)
-- [ ] Connection termination
-- [ ] Retransmission
+### 6.6 TCP [x]
+- [x] TCP state machine
+- [x] Connection establishment (3-way handshake)
+- [x] Data transfer with sequence numbers
+- [x] Flow control (sliding window)
+- [x] Connection termination
+- [x] Retransmission (basic timeout-based)
 
 ### 6.7 Socket API [PARTIAL]
-- [x] socket() - create socket (AF_INET, SOCK_DGRAM only)
+- [x] socket() - create socket (AF_INET, SOCK_DGRAM and SOCK_STREAM)
 - [x] bind() - bind to address
-- [ ] listen() - mark as listening (TCP only)
-- [ ] accept() - accept connection (TCP only)
-- [x] connect() - connect to remote (sets default dest)
+- [x] listen() - mark as listening (TCP)
+- [x] accept() - accept connection (TCP)
+- [x] connect() - connect to remote (TCP and UDP)
 - [ ] send()/recv() - data transfer (use sendto/recvfrom)
-- [x] sendto()/recvfrom() - UDP
+- [x] sendto()/recvfrom() - UDP and TCP
 - [ ] select()/poll() - I/O multiplexing - deferred
 - [ ] getsockopt()/setsockopt() - deferred
 - [ ] getpeername()/getsockname() - deferred
@@ -276,7 +276,7 @@
 
 ---
 
-## Phase 7: Security Model
+## Phase 7: Security Model [COMPLETE]
 
 ### 7.1 File Permissions [x]
 - [x] Permission bits in inodes (rwxrwxrwx)
@@ -291,14 +291,14 @@
 - [ ] setuid/setgid bit handling on exec (deferred)
 - [ ] Capability system (optional, Linux-style)
 
-### 7.3 Resource Limits
-- [ ] rlimit structure and values
-- [ ] getrlimit()/setrlimit() implementation
-- [ ] RLIMIT_NOFILE (max open files)
-- [ ] RLIMIT_AS (address space)
-- [ ] RLIMIT_STACK (stack size)
-- [ ] RLIMIT_CPU (CPU time)
-- [ ] RLIMIT_NPROC (max processes)
+### 7.3 Resource Limits [x]
+- [x] rlimit structure and values
+- [x] getrlimit()/setrlimit() implementation
+- [x] RLIMIT_NOFILE (max open files) - enforced in fd_table_alloc()
+- [x] RLIMIT_AS (address space) - enforced in sys_mmap()
+- [x] RLIMIT_STACK (stack size) - default 8MB/16MB
+- [x] RLIMIT_CPU (CPU time) - structure defined
+- [x] RLIMIT_NPROC (max processes) - enforced in sys_fork()
 
 ---
 

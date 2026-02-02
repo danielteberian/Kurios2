@@ -229,6 +229,8 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 | `virtio.c` | Virtio core. Virtqueue management, legacy PCI transport, feature negotiation |
 | `virtio.h` | Virtio structures: `virtqueue_t`, device types, feature bits |
 | `virtio_blk.c` | Virtio block device driver. Registers as block device, polling-based I/O |
+| `virtio_net.h` | Virtio-net definitions. Device config (MAC, status), packet header, feature bits (MAC, STATUS) |
+| `virtio_net.c` | Virtio-net network driver (~290 lines). RX/TX virtqueues, scatter-gather I/O, MAC address reading, registers with netdev layer, static IP 10.0.2.15/24 |
 
 ---
 
@@ -289,6 +291,26 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 |------|---------|
 | `signal.c` | Signal infrastructure. `signal_deliver_pending()`, `sigaction`, `sigreturn`, SIGCHLD on child exit. Job control: `handle_default_signal()` calls `process_stop()` for STOP signals, `process_continue()` for CONT. Auto-resume on SIGCONT. `signal_send_sigchld_stopped()`, `signal_send_sigchld_continued()` |
 | `signal.h` | Signal numbers (SIGHUP-SIGSYS), structures: `sigaction_t`, `sigset_t`, `siginfo_t`, `signal_state_t`. Default actions: TERM/CORE/STOP/CONT/IGN. SA_NOCLDSTOP flag support |
+
+---
+
+### kernel/net/ - Networking Stack
+
+| File | Purpose |
+|------|---------|
+| `netdev.h` | Network device abstraction. `netdev_t` structure, device registration, packet handling |
+| `netdev.c` | Network device layer. Device management, packet allocation/transmission/reception, device lookup |
+| `loopback.c` | Loopback network device (127.0.0.1). Instant packet loopback, MTU 65536 |
+| `ip.h` | IPv4 protocol definitions. IP header structure, protocol numbers, localhost constant |
+| `ip.c` | IPv4 implementation. Header parsing/validation, checksum, routing, protocol dispatch (ICMP/UDP/TCP) |
+| `icmp.h` | ICMP protocol definitions. ICMP header, message types (echo request/reply) |
+| `icmp.c` | ICMP implementation. Echo request/reply (ping), automatic ping responses |
+| `udp.h` | UDP protocol definitions. UDP header structure |
+| `udp.c` | UDP implementation. Datagram send/receive, port-based delivery, checksum optional |
+| `tcp.h` | TCP protocol definitions. TCP header (20 bytes), states (11 states), connection block, flags (FIN/SYN/RST/PSH/ACK/URG) |
+| `tcp.c` | TCP implementation (~600 lines). State machine, 3-way handshake, connection teardown, sequence numbers, flow control, basic retransmission, checksum with pseudo-header |
+| `socket.h` | BSD socket API. Socket structure, socket FD table, socket operations |
+| `socket.c` | Socket layer implementation. Create/bind/connect/listen/accept, sendto/recvfrom, AF_INET support, SOCK_DGRAM and SOCK_STREAM, per-socket receive buffers (8KB) |
 
 ---
 
@@ -355,6 +377,9 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 | `test_vmm.c` | VMM unit tests |
 | `test_slab.c` | Slab allocator tests |
 | `test_spinlock.c` | Spinlock tests |
+| `test_rlimits.c` | Resource limits tests (getrlimit, setrlimit, defaults, enforcement) |
+| `test_socket.c` | Socket and TCP tests (create, bind, listen, accept, TCP connections) |
+| `test_netdev.c` | Network device tests (loopback device, packet allocation) |
 
 ---
 
