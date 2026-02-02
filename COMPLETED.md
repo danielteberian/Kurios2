@@ -854,3 +854,50 @@
     - Group match uses group bits only
     - Falls back to other bits
   - **Error handling:** Returns EACCES if permission denied
+
+### Basic Networking Stack (Phase 6 - UDP/ICMP/Loopback) [IMPLEMENTED]
+- [2026-02-01] Complete network subsystem with UDP and ICMP support
+  - **Files:** kernel/net/* (6 new files, ~1000 lines)
+  - **Network device layer (kernel/net/netdev.c):**
+    - netdev_t structure for network devices
+    - Device registration and management
+    - Packet allocation and handling
+    - Device lookup by name/IP
+  - **Loopback device (kernel/net/loopback.c):**
+    - Full 127.0.0.1 support
+    - Instant packet loopback
+    - MTU: 65536 bytes
+  - **IP layer (kernel/net/ip.c):**
+    - IPv4 header parsing/validation
+    - IP checksum calculation
+    - Protocol dispatch (ICMP/UDP/TCP)
+    - Simple routing (by source device IP)
+  - **ICMP implementation (kernel/net/icmp.c):**
+    - Echo request/reply (ping)
+    - Automatic ping responses
+  - **UDP implementation (kernel/net/udp.c):**
+    - Full UDP send/receive
+    - Port-based delivery
+    - Checksum optional (not implemented for simplicity)
+  - **Socket layer (kernel/net/socket.c):**
+    - BSD socket API (subset)
+    - Socket creation (SOCK_DGRAM only)
+    - Bind, connect, sendto, recvfrom
+    - Per-socket receive buffers (8KB)
+    - Socket FD table (256 sockets max)
+  - **Syscalls implemented:**
+    - socket(AF_INET, SOCK_DGRAM, 0) - Create UDP socket
+    - bind(sockfd, &addr, len) - Bind to address/port
+    - connect(sockfd, &addr, len) - Set default destination
+    - sendto(sockfd, buf, len, 0, &addr, addrlen) - Send UDP packet
+    - recvfrom(sockfd, buf, len, 0, &addr, &addrlen) - Receive UDP packet
+  - **Limitations:**
+    - Loopback only (no physical network devices yet)
+    - UDP only (TCP not implemented)
+    - No select/poll (blocking only with EAGAIN)
+    - Simple single-packet receive buffer per socket
+  - **What works:**
+    - Ping localhost (ICMP echo)
+    - UDP client/server on 127.0.0.1
+    - Multiple sockets, multiple ports
+    - Proper port binding and delivery

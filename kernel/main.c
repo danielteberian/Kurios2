@@ -37,8 +37,13 @@
 #include "fs/ext2.h"
 #include "fs/fat32.h"
 #include "drivers/partition.h"
+#include "net/netdev.h"
+#include "net/socket.h"
 #include "lib/string.h"
 #include "boot_info.h"
+
+/* Forward declaration for loopback */
+void loopback_init(void);
 #include "acpi/acpi.h"
 #include "apic/apic.h"
 #include "drivers/hpet.h"
@@ -737,6 +742,11 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize syscall infrastructure */
     syscall_init();
+
+    /* Initialize network subsystem */
+    net_init();
+    socket_init();
+    loopback_init();
 
 #ifdef DEBUG_TESTS
     /* Run process subsystem tests */

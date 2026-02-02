@@ -219,34 +219,34 @@
 
 ---
 
-## Phase 6: Networking Stack
+## Phase 6: Networking Stack [PARTIAL]
 
-### 6.1 Network Device Layer
-- [ ] netdev_t structure
-- [ ] Network device registration
-- [ ] Packet receive path
-- [ ] Packet transmit path
+### 6.1 Network Device Layer [x]
+- [x] netdev_t structure
+- [x] Network device registration
+- [x] Packet receive path
+- [x] Packet transmit path
 
-### 6.2 Network Drivers
-- [ ] Virtio-net driver (for QEMU)
-- [ ] E1000 driver (Intel NIC, also QEMU)
-- [ ] Loopback device (127.0.0.1)
+### 6.2 Network Drivers [PARTIAL]
+- [ ] Virtio-net driver (for QEMU) - deferred
+- [ ] E1000 driver (Intel NIC, also QEMU) - deferred
+- [x] Loopback device (127.0.0.1)
 
-### 6.3 Ethernet/ARP
-- [ ] Ethernet frame parsing
-- [ ] ARP request/reply
-- [ ] ARP cache
+### 6.3 Ethernet/ARP [SKIPPED]
+- [ ] Ethernet frame parsing - not needed for loopback
+- [ ] ARP request/reply - not needed for loopback
+- [ ] ARP cache - not needed for loopback
 
-### 6.4 IP Layer
-- [ ] IPv4 header parsing/creation
-- [ ] IP routing table (simple)
-- [ ] ICMP (ping support)
-- [ ] IP fragmentation (optional)
+### 6.4 IP Layer [x]
+- [x] IPv4 header parsing/creation
+- [x] IP routing table (simple - by device IP)
+- [x] ICMP (ping support - echo request/reply)
+- [ ] IP fragmentation (optional) - deferred
 
-### 6.5 UDP
-- [ ] UDP socket implementation
-- [ ] UDP send/receive
-- [ ] Port binding
+### 6.5 UDP [x]
+- [x] UDP socket implementation
+- [x] UDP send/receive
+- [x] Port binding
 
 ### 6.6 TCP
 - [ ] TCP state machine
@@ -256,17 +256,17 @@
 - [ ] Connection termination
 - [ ] Retransmission
 
-### 6.7 Socket API
-- [ ] socket() - create socket
-- [ ] bind() - bind to address
-- [ ] listen() - mark as listening
-- [ ] accept() - accept connection
-- [ ] connect() - connect to remote
-- [ ] send()/recv() - data transfer
-- [ ] sendto()/recvfrom() - UDP
-- [ ] select()/poll() - I/O multiplexing
-- [ ] getsockopt()/setsockopt()
-- [ ] getpeername()/getsockname()
+### 6.7 Socket API [PARTIAL]
+- [x] socket() - create socket (AF_INET, SOCK_DGRAM only)
+- [x] bind() - bind to address
+- [ ] listen() - mark as listening (TCP only)
+- [ ] accept() - accept connection (TCP only)
+- [x] connect() - connect to remote (sets default dest)
+- [ ] send()/recv() - data transfer (use sendto/recvfrom)
+- [x] sendto()/recvfrom() - UDP
+- [ ] select()/poll() - I/O multiplexing - deferred
+- [ ] getsockopt()/setsockopt() - deferred
+- [ ] getpeername()/getsockname() - deferred
 
 ### 6.8 DNS (Optional)
 - [ ] DNS query construction

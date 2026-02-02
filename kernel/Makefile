@@ -59,7 +59,13 @@ C_SOURCES := \
     smp/percpu.c \
     smp/smp.c \
     smp/tlb.c \
-    signal/signal.c
+    signal/signal.c \
+    net/netdev.c \
+    net/ip.c \
+    net/icmp.c \
+    net/udp.c \
+    net/socket.c \
+    net/loopback.c
 
 # Test source files (only included in test builds)
 TEST_SOURCES := \
@@ -140,6 +146,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/initrd
 	mkdir -p $(BUILD_DIR)/smp
 	mkdir -p $(BUILD_DIR)/signal
+	mkdir -p $(BUILD_DIR)/net
 
 # Ensure directories exist before compiling
 $(BUILD_DIR)/debug/%.o: | $(BUILD_DIR)

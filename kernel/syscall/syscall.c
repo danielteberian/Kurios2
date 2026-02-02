@@ -3075,11 +3075,191 @@ int syscall_register(int num, syscall_handler_t handler) {
     return 0;
 }
 
+/* ============================================================================
+ * Socket Syscalls
+ * ============================================================================ */
+
+#include "../net/socket.h"
+
+/* Socket file descriptor table (simple array for now) */
+#define MAX_SOCKET_FDS  256
+static socket_t *socket_fds[MAX_SOCKET_FDS];
+
+/*
+ * sys_socket - create a socket
+ */
+static int64_t sys_socket(uint64_t domain, uint64_t type, uint64_t protocol,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)protocol; (void)arg4; (void)arg5; (void)arg6;
+
+    if (domain != AF_INET) {
+        return -97;  /* EAFNOSUPPORT */
+    }
+
+    if (type != SOCK_DGRAM) {
+        return -95;  /* EOPNOTSUPP - only UDP for now */
+    }
+
+    socket_t *sock = socket_create((int)type);
+    if (!sock) {
+        return -24;  /* EMFILE */
+    }
+
+    /* Find free socket FD */
+    for (int i = 0; i < MAX_SOCKET_FDS; i++) {
+        if (!socket_fds[i]) {
+            socket_fds[i] = sock;
+            return i;
+        }
+    }
+
+    socket_destroy(sock);
+    return -24;  /* EMFILE */
+}
+
+/*
+ * sys_bind - bind socket to address
+ */
+static int64_t sys_bind(uint64_t sockfd, uint64_t addr_ptr, uint64_t addrlen,
+                        uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)addrlen; (void)arg4; (void)arg5; (void)arg6;
+
+    if (sockfd >= MAX_SOCKET_FDS || !socket_fds[sockfd]) {
+        return -9;  /* EBADF */
+    }
+
+    sockaddr_in_t addr;
+    if (copy_from_user(&addr, (void *)addr_ptr, sizeof(addr)) < 0) {
+        return -14;  /* EFAULT */
+    }
+
+    socket_t *sock = socket_fds[sockfd];
+    return socket_bind(sock, addr.sin_addr, addr.sin_port);
+}
+
+/*
+ * sys_connect - connect socket to address
+ */
+static int64_t sys_connect(uint64_t sockfd, uint64_t addr_ptr, uint64_t addrlen,
+                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)addrlen; (void)arg4; (void)arg5; (void)arg6;
+
+    if (sockfd >= MAX_SOCKET_FDS || !socket_fds[sockfd]) {
+        return -9;
+    }
+
+    sockaddr_in_t addr;
+    if (copy_from_user(&addr, (void *)addr_ptr, sizeof(addr)) < 0) {
+        return -14;
+    }
+
+    socket_t *sock = socket_fds[sockfd];
+    return socket_connect(sock, addr.sin_addr, addr.sin_port);
+}
+
+/*
+ * sys_sendto - send data via socket
+ */
+static int64_t sys_sendto(uint64_t sockfd, uint64_t buf_ptr, uint64_t len,
+                          uint64_t flags, uint64_t addr_ptr, uint64_t addrlen) {
+    (void)flags; (void)addrlen;
+
+    if (sockfd >= MAX_SOCKET_FDS || !socket_fds[sockfd]) {
+        return -9;
+    }
+
+    if (len > 65536) {  /* Sanity limit */
+        return -90;  /* EMSGSIZE */
+    }
+
+    /* Copy data from user space */
+    uint8_t *buf = kmalloc(len);
+    if (!buf) {
+        return -12;  /* ENOMEM */
+    }
+
+    if (copy_from_user(buf, (void *)buf_ptr, len) < 0) {
+        kfree(buf);
+        return -14;
+    }
+
+    socket_t *sock = socket_fds[sockfd];
+    uint32_t dst_ip = 0;
+    uint16_t dst_port = 0;
+
+    /* Get destination address if provided */
+    if (addr_ptr) {
+        sockaddr_in_t addr;
+        if (copy_from_user(&addr, (void *)addr_ptr, sizeof(addr)) < 0) {
+            kfree(buf);
+            return -14;
+        }
+        dst_ip = addr.sin_addr;
+        dst_port = addr.sin_port;
+    }
+
+    int ret = socket_sendto(sock, buf, len, dst_ip, dst_port);
+    kfree(buf);
+    return ret;
+}
+
+/*
+ * sys_recvfrom - receive data from socket
+ */
+static int64_t sys_recvfrom(uint64_t sockfd, uint64_t buf_ptr, uint64_t len,
+                            uint64_t flags, uint64_t addr_ptr, uint64_t addrlen_ptr) {
+    (void)flags; (void)addrlen_ptr;
+
+    if (sockfd >= MAX_SOCKET_FDS || !socket_fds[sockfd]) {
+        return -9;
+    }
+
+    if (len > 65536) {
+        return -22;  /* EINVAL */
+    }
+
+    /* Allocate kernel buffer */
+    uint8_t *buf = kmalloc(len);
+    if (!buf) {
+        return -12;
+    }
+
+    socket_t *sock = socket_fds[sockfd];
+    uint32_t src_ip = 0;
+    uint16_t src_port = 0;
+
+    ssize_t ret = socket_recvfrom(sock, buf, len, &src_ip, &src_port);
+
+    if (ret > 0) {
+        /* Copy to user space */
+        if (copy_to_user((void *)buf_ptr, buf, ret) < 0) {
+            kfree(buf);
+            return -14;
+        }
+
+        /* Fill in source address if requested */
+        if (addr_ptr) {
+            sockaddr_in_t addr;
+            addr.sin_family = AF_INET;
+            addr.sin_addr = src_ip;
+            addr.sin_port = src_port;
+            memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
+            copy_to_user((void *)addr_ptr, &addr, sizeof(addr));
+        }
+    }
+
+    kfree(buf);
+    return ret;
+}
+
 /*
  * Initialize syscall infrastructure
  */
 void syscall_init(void) {
     INFO("Initializing syscall infrastructure...");
+
+    /* Initialize socket FD table */
+    memset(socket_fds, 0, sizeof(socket_fds));
 
     /* Explicitly initialize static variables in case static init failed */
     syscall_initialized = false;
@@ -3168,14 +3348,14 @@ void syscall_init(void) {
     syscall_register(SYS_FSYNC, sys_fsync);
     syscall_register(SYS_FDATASYNC, sys_fdatasync);
 
-    /* Socket syscalls - stub implementations returning ENOSYS */
-    syscall_register(SYS_SOCKET, sys_unimplemented);
-    syscall_register(SYS_CONNECT, sys_unimplemented);
-    syscall_register(SYS_ACCEPT, sys_unimplemented);
-    syscall_register(SYS_SENDTO, sys_unimplemented);
-    syscall_register(SYS_RECVFROM, sys_unimplemented);
-    syscall_register(SYS_BIND, sys_unimplemented);
-    syscall_register(SYS_LISTEN, sys_unimplemented);
+    /* Socket syscalls */
+    syscall_register(SYS_SOCKET, sys_socket);
+    syscall_register(SYS_CONNECT, sys_connect);
+    syscall_register(SYS_ACCEPT, sys_unimplemented);  /* TCP not implemented yet */
+    syscall_register(SYS_SENDTO, sys_sendto);
+    syscall_register(SYS_RECVFROM, sys_recvfrom);
+    syscall_register(SYS_BIND, sys_bind);
+    syscall_register(SYS_LISTEN, sys_unimplemented);  /* TCP not implemented yet */
 
     /* Resource usage and time syscalls */
     syscall_register(SYS_GETRUSAGE, sys_getrusage);
