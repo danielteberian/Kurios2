@@ -7,6 +7,9 @@ extern void test_suite_pmm(void);
 extern void test_suite_vmm(void);
 extern void test_suite_slab(void);
 extern void test_suite_spinlock(void);
+extern void test_suite_rlimits(void);
+extern void test_suite_socket(void);
+extern void test_suite_netdev(void);
 
 /*
  * Run all kernel tests
@@ -20,6 +23,9 @@ void run_all_tests(void) {
     RUN_SUITE(vmm);
     RUN_SUITE(slab);
     RUN_SUITE(spinlock);
+    RUN_SUITE(rlimits);
+    RUN_SUITE(socket);
+    RUN_SUITE(netdev);
 
     /* Print final results */
     test_print_results();

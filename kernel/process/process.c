@@ -178,6 +178,19 @@ void process_init(void) {
     kernel_proc->user_stack = 0;
     copy_process_name(kernel_proc, "kernel");
 
+    /* Initialize resource limits to defaults */
+    for (int i = 0; i < RLIM_NLIMITS; i++) {
+        kernel_proc->limits[i].rlim_cur = RLIM_INFINITY;
+        kernel_proc->limits[i].rlim_max = RLIM_INFINITY;
+    }
+    /* Set reasonable defaults for some limits */
+    kernel_proc->limits[RLIMIT_NOFILE].rlim_cur = 1024;
+    kernel_proc->limits[RLIMIT_NOFILE].rlim_max = 4096;
+    kernel_proc->limits[RLIMIT_NPROC].rlim_cur = 256;
+    kernel_proc->limits[RLIMIT_NPROC].rlim_max = 512;
+    kernel_proc->limits[RLIMIT_STACK].rlim_cur = 8 * 1024 * 1024;  /* 8MB */
+    kernel_proc->limits[RLIMIT_STACK].rlim_max = 16 * 1024 * 1024; /* 16MB */
+
     process_table[0] = kernel_proc;
     current_process = kernel_proc;
     active_processes = 1;

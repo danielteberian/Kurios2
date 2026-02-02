@@ -76,7 +76,10 @@ TEST_SOURCES := \
     tests/test_pmm.c \
     tests/test_vmm.c \
     tests/test_slab.c \
-    tests/test_spinlock.c
+    tests/test_spinlock.c \
+    tests/test_rlimits.c \
+    tests/test_socket.c \
+    tests/test_netdev.c
 
 # Object files
 ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(BUILD_DIR)/%.o)
