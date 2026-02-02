@@ -455,15 +455,37 @@
     - `clock_gettime()` now returns real time for CLOCK_REALTIME
     - Uses HPET for microsecond precision when available, falls back to PIT
 
-### getrandom() Syscall [NEW]
-- [2026-02-02] Added getrandom() syscall for obtaining random bytes
-  - **Syscall number:** 318 (matching Linux x86_64)
-  - **Implementation:** `sys_getrandom(buf, buflen, flags)` in syscall.c
-  - **Features:**
-    - Uses same xorshift64 PRNG as /dev/urandom
-    - `get_random_bytes()` helper function in tty.c
-    - GRND_NONBLOCK and GRND_RANDOM flags defined (GRND_RANDOM ignored)
-  - Provides direct syscall interface for random bytes without opening /dev/urandom
+### Batch Syscall Additions [NEW]
+- [2026-02-02] Added multiple quick-win syscalls
+
+  **getrandom() syscall:**
+  - Syscall number 318 (matching Linux x86_64)
+  - Uses xorshift64 PRNG (same as /dev/urandom)
+  - `get_random_bytes()` helper function in tty.c
+
+  **File permission syscalls:**
+  - `chmod(path, mode)` - change file permissions
+  - `fchmod(fd, mode)` - change permissions by fd
+  - `chown(path, uid, gid)` - change file owner/group
+  - `fchown(fd, uid, gid)` - change owner/group by fd
+  - `lchown(path, uid, gid)` - change symlink owner
+  - VFS functions: `vfs_chmod()`, `vfs_fchmod()`, `vfs_chown()`, `vfs_fchown()`
+
+  **Filesystem sync syscalls:**
+  - `sync()` - sync all filesystems (no-op for ramfs)
+  - `fsync(fd)` - sync file data
+  - `fdatasync(fd)` - sync file data (same as fsync)
+  - VFS functions: `vfs_sync()`, `vfs_fsync()`
+
+  **Hard link syscall:**
+  - `link()` - returns ENOSYS (ramfs doesn't support hard links)
+
+  **Stat syscalls:**
+  - `lstat(path, statbuf)` - stat without following symlinks
+
+  **Resource usage syscalls (stubs):**
+  - `getrusage(who, usage)` - returns zeros
+  - `times(buf)` - returns clock ticks since boot
 
 ### ext2 Symbolic Links [NEW]
 - [2026-02-02] Added symlink support to ext2 filesystem

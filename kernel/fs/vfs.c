@@ -1055,6 +1055,99 @@ ssize_t vfs_readlink(const char *path, char *buf, size_t size) {
 }
 
 /*
+ * Permission and Ownership Operations
+ */
+int vfs_chmod(const char *path, uint32_t mode) {
+    if (!path) {
+        return VFS_EINVAL;
+    }
+
+    vfs_node_t *node = vfs_lookup(path);
+    if (!node) {
+        return VFS_ENOENT;
+    }
+
+    /* Update permission bits (only lower 12 bits: rwxrwxrwx + suid/sgid/sticky) */
+    node->permissions = mode & 0xFFF;
+
+    vfs_node_unref(node);
+    return VFS_OK;
+}
+
+int vfs_fchmod(int fd, uint32_t mode) {
+    file_t *file = get_file(fd);
+    if (!file || file == (file_t *)1) {
+        return VFS_EBADF;
+    }
+
+    vfs_node_t *node = file->node;
+    if (!node) {
+        return VFS_EBADF;
+    }
+
+    /* Update permission bits */
+    node->permissions = mode & 0xFFF;
+
+    return VFS_OK;
+}
+
+int vfs_chown(const char *path, uint32_t uid, uint32_t gid) {
+    if (!path) {
+        return VFS_EINVAL;
+    }
+
+    vfs_node_t *node = vfs_lookup(path);
+    if (!node) {
+        return VFS_ENOENT;
+    }
+
+    /* Update owner and group */
+    node->uid = uid;
+    node->gid = gid;
+
+    vfs_node_unref(node);
+    return VFS_OK;
+}
+
+int vfs_fchown(int fd, uint32_t uid, uint32_t gid) {
+    file_t *file = get_file(fd);
+    if (!file || file == (file_t *)1) {
+        return VFS_EBADF;
+    }
+
+    vfs_node_t *node = file->node;
+    if (!node) {
+        return VFS_EBADF;
+    }
+
+    /* Update owner and group */
+    node->uid = uid;
+    node->gid = gid;
+
+    return VFS_OK;
+}
+
+/*
+ * Sync Operations
+ */
+int vfs_sync(void) {
+    /* For ramfs, nothing to sync to disk */
+    /* For real filesystems, would iterate mounts and sync each */
+    return VFS_OK;
+}
+
+int vfs_fsync(int fd) {
+    file_t *file = get_file(fd);
+    if (!file || file == (file_t *)1) {
+        return VFS_EBADF;
+    }
+
+    /* For ramfs, nothing to sync */
+    /* For real filesystems, would flush file data to disk */
+    return VFS_OK;
+}
+
+/*
  * Debug
  */
 void vfs_dump_tree(vfs_node_t *node, int depth) {

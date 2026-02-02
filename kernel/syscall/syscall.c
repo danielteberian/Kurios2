@@ -708,6 +708,39 @@ static int64_t sys_stat(uint64_t pathname, uint64_t statbuf, uint64_t arg3,
 }
 
 /*
+ * sys_lstat - get file status (don't follow symlinks)
+ * For symlinks, returns info about the link itself, not the target
+ */
+static int64_t sys_lstat(uint64_t pathname, uint64_t statbuf, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    if (!access_ok((void *)statbuf, sizeof(vfs_stat_t))) {
+        return -EFAULT;
+    }
+
+    /* Note: vfs_stat doesn't follow symlinks currently, so this is the same as stat */
+    /* When symlink following is added to stat, this should not follow */
+    vfs_stat_t kstat;
+    int ret = vfs_stat(path, &kstat);
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (copy_to_user((void *)statbuf, &kstat, sizeof(kstat)) < 0) {
+        return -EFAULT;
+    }
+
+    return 0;
+}
+
+/*
  * sys_access - check file access permissions
  */
 static int64_t sys_access(uint64_t pathname, uint64_t mode, uint64_t arg3,
@@ -1140,6 +1173,149 @@ static int64_t sys_symlink(uint64_t target, uint64_t linkpath, uint64_t arg3,
     /* Create the symlink */
     int result = vfs_symlink(target_buf, link_buf);
     return result;  /* VFS error codes match syscall error codes */
+}
+
+/*
+ * sys_link - create a hard link (stub - ramfs doesn't support hard links)
+ */
+static int64_t sys_link(uint64_t oldpath, uint64_t newpath, uint64_t arg3,
+                        uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)oldpath; (void)newpath;
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    /* Hard links not supported in ramfs */
+    return -ENOSYS;
+}
+
+/*
+ * sys_chmod - change file permissions
+ */
+static int64_t sys_chmod(uint64_t pathname, uint64_t mode, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    return vfs_chmod(path, (uint32_t)mode);
+}
+
+/*
+ * sys_fchmod - change file permissions by fd
+ */
+static int64_t sys_fchmod(uint64_t fd, uint64_t mode, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    return vfs_fchmod((int)fd, (uint32_t)mode);
+}
+
+/*
+ * sys_chown - change file owner and group
+ */
+static int64_t sys_chown(uint64_t pathname, uint64_t owner, uint64_t group,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    return vfs_chown(path, (uint32_t)owner, (uint32_t)group);
+}
+
+/*
+ * sys_fchown - change file owner and group by fd
+ */
+static int64_t sys_fchown(uint64_t fd, uint64_t owner, uint64_t group,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    return vfs_fchown((int)fd, (uint32_t)owner, (uint32_t)group);
+}
+
+/*
+ * sys_lchown - change symlink owner (same as chown for us)
+ */
+static int64_t sys_lchown(uint64_t pathname, uint64_t owner, uint64_t group,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    /* For symlinks, we don't follow the link - but we treat it same as chown */
+    return sys_chown(pathname, owner, group, arg4, arg5, arg6);
+}
+
+/*
+ * sys_sync - sync all filesystems
+ */
+static int64_t sys_sync(uint64_t arg1, uint64_t arg2, uint64_t arg3,
+                        uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    return vfs_sync();
+}
+
+/*
+ * sys_fsync - sync file data to disk
+ */
+static int64_t sys_fsync(uint64_t fd, uint64_t arg2, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    return vfs_fsync((int)fd);
+}
+
+/*
+ * sys_fdatasync - sync file data (same as fsync for us)
+ */
+static int64_t sys_fdatasync(uint64_t fd, uint64_t arg2, uint64_t arg3,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    /* fdatasync is like fsync but doesn't sync metadata - we treat them the same */
+    return sys_fsync(fd, arg2, arg3, arg4, arg5, arg6);
+}
+
+/*
+ * sys_getrusage - get resource usage (stub)
+ * Returns zeros - actual resource tracking not implemented
+ */
+static int64_t sys_getrusage(uint64_t who, uint64_t usage, uint64_t arg3,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)who; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (!usage) {
+        return -EFAULT;
+    }
+
+    /* Zero out the rusage structure (simplified: 144 bytes on Linux x86_64) */
+    char zero_usage[144] = {0};
+    if (copy_to_user((void *)usage, zero_usage, sizeof(zero_usage)) < 0) {
+        return -EFAULT;
+    }
+
+    return 0;
+}
+
+/*
+ * sys_times - get process times (stub)
+ * Returns zeros - actual time tracking not implemented
+ */
+static int64_t sys_times(uint64_t buf, uint64_t arg2, uint64_t arg3,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (buf) {
+        /* Zero out tms structure (32 bytes: 4 clock_t values) */
+        char zero_tms[32] = {0};
+        if (copy_to_user((void *)buf, zero_tms, sizeof(zero_tms)) < 0) {
+            return -EFAULT;
+        }
+    }
+
+    /* Return clock ticks since boot (use PIT uptime) */
+    extern uint64_t pit_get_uptime_ms(void);
+    return (int64_t)(pit_get_uptime_ms() / 10);  /* Assume 100 Hz ticks */
 }
 
 /* ============================================================================
@@ -2456,6 +2632,7 @@ void syscall_init(void) {
     syscall_register(SYS_CLOSE, sys_close);
     syscall_register(SYS_STAT, sys_stat);
     syscall_register(SYS_FSTAT, sys_fstat);
+    syscall_register(SYS_LSTAT, sys_lstat);
     syscall_register(SYS_LSEEK, sys_lseek);
     syscall_register(SYS_MMAP, sys_mmap);
     syscall_register(SYS_MPROTECT, sys_mprotect);
@@ -2507,6 +2684,18 @@ void syscall_init(void) {
     syscall_register(SYS_CLOCK_GETRES, sys_clock_getres);
     syscall_register(SYS_GETRANDOM, sys_getrandom);
 
+    /* File permission and ownership syscalls */
+    syscall_register(SYS_CHMOD, sys_chmod);
+    syscall_register(SYS_FCHMOD, sys_fchmod);
+    syscall_register(SYS_CHOWN, sys_chown);
+    syscall_register(SYS_FCHOWN, sys_fchown);
+    syscall_register(SYS_LCHOWN, sys_lchown);
+
+    /* Filesystem sync syscalls */
+    syscall_register(SYS_SYNC, sys_sync);
+    syscall_register(SYS_FSYNC, sys_fsync);
+    syscall_register(SYS_FDATASYNC, sys_fdatasync);
+
     /* Socket syscalls - stub implementations returning ENOSYS */
     syscall_register(SYS_SOCKET, sys_unimplemented);
     syscall_register(SYS_CONNECT, sys_unimplemented);
@@ -2516,12 +2705,16 @@ void syscall_init(void) {
     syscall_register(SYS_BIND, sys_unimplemented);
     syscall_register(SYS_LISTEN, sys_unimplemented);
 
+    /* Resource usage and time syscalls */
+    syscall_register(SYS_GETRUSAGE, sys_getrusage);
+    syscall_register(SYS_TIMES, sys_times);
+
     /* Resource limit syscalls - stub implementations returning ENOSYS */
     syscall_register(SYS_GETRLIMIT, sys_unimplemented);
     syscall_register(SYS_SETRLIMIT, sys_unimplemented);
 
-    /* Filesystem link syscalls - stub implementations returning ENOSYS */
-    syscall_register(SYS_LINK, sys_unimplemented);
+    /* Filesystem link syscalls */
+    syscall_register(SYS_LINK, sys_link);
     syscall_register(SYS_SYMLINK, sys_symlink);
 
     /* I/O multiplexing syscalls - stub implementations returning ENOSYS */

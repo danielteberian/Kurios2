@@ -16,6 +16,7 @@
 #define SYS_CLOSE       3
 #define SYS_STAT        4
 #define SYS_FSTAT       5
+#define SYS_LSTAT       6
 #define SYS_LSEEK       8
 #define SYS_MMAP        9
 #define SYS_MPROTECT    10
@@ -64,6 +65,8 @@
 #define SYS_READLINK    89
 #define SYS_UMASK       95
 #define SYS_GETTIMEOFDAY 96
+#define SYS_GETRUSAGE   98
+#define SYS_TIMES       100
 #define SYS_GETRLIMIT   97
 #define SYS_GETUID      102
 #define SYS_SYSLOG      103
@@ -78,6 +81,14 @@
 #define SYS_SETPGID     109
 #define SYS_GETSID      124
 #define SYS_SETRLIMIT   160
+#define SYS_SYNC        162
+#define SYS_FSYNC       74
+#define SYS_FDATASYNC   75
+#define SYS_CHMOD       90
+#define SYS_FCHMOD      91
+#define SYS_CHOWN       92
+#define SYS_FCHOWN      93
+#define SYS_LCHOWN      94
 #define SYS_CLOCK_GETTIME 228
 #define SYS_CLOCK_GETRES  229
 #define SYS_GETRANDOM     318

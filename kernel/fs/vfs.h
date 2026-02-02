@@ -223,6 +223,20 @@ int vfs_symlink(const char *target, const char *linkpath);
 ssize_t vfs_readlink(const char *path, char *buf, size_t size);
 
 /*
+ * Permission and Ownership Operations
+ */
+int vfs_chmod(const char *path, uint32_t mode);
+int vfs_fchmod(int fd, uint32_t mode);
+int vfs_chown(const char *path, uint32_t uid, uint32_t gid);
+int vfs_fchown(int fd, uint32_t uid, uint32_t gid);
+
+/*
+ * Sync Operations
+ */
+int vfs_sync(void);
+int vfs_fsync(int fd);
+
+/*
  * Node Management
  */
 vfs_node_t *vfs_node_alloc(void);

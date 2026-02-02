@@ -266,12 +266,12 @@
 ## Phase 7: Security Model
 
 ### 7.1 File Permissions
-- [ ] Permission bits in inodes (rwxrwxrwx)
-- [ ] Owner/group in inodes
+- [x] Permission bits in inodes (rwxrwxrwx)
+- [x] Owner/group in inodes
 - [ ] Permission checking on open/exec
-- [ ] umask support (already stubbed)
-- [ ] chmod()/fchmod() implementation
-- [ ] chown()/fchown() implementation
+- [x] umask support (already stubbed)
+- [x] chmod()/fchmod() implementation
+- [x] chown()/fchown() implementation
 
 ### 7.2 Process Credentials
 - [ ] UID/GID checking on file access
