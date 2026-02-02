@@ -160,4 +160,13 @@ void tty_ldisc_input(tty_t *tty, char c,
  */
 int tty_ioctl_common(tty_t *tty, unsigned long request, void *arg);
 
+/*
+ * Get random bytes (for getrandom syscall)
+ * Uses the same PRNG as /dev/urandom
+ *
+ * @param buf   Buffer to fill with random bytes
+ * @param size  Number of bytes to generate
+ */
+void get_random_bytes(void *buf, size_t size);
+
 #endif /* _KERNEL_TTY_H */

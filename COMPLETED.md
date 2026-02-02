@@ -455,6 +455,16 @@
     - `clock_gettime()` now returns real time for CLOCK_REALTIME
     - Uses HPET for microsecond precision when available, falls back to PIT
 
+### getrandom() Syscall [NEW]
+- [2026-02-02] Added getrandom() syscall for obtaining random bytes
+  - **Syscall number:** 318 (matching Linux x86_64)
+  - **Implementation:** `sys_getrandom(buf, buflen, flags)` in syscall.c
+  - **Features:**
+    - Uses same xorshift64 PRNG as /dev/urandom
+    - `get_random_bytes()` helper function in tty.c
+    - GRND_NONBLOCK and GRND_RANDOM flags defined (GRND_RANDOM ignored)
+  - Provides direct syscall interface for random bytes without opening /dev/urandom
+
 ### ext2 Symbolic Links [NEW]
 - [2026-02-02] Added symlink support to ext2 filesystem
   - **VFS Layer:**

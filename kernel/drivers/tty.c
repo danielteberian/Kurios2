@@ -93,6 +93,22 @@ static ssize_t urandom_read(vfs_node_t *node, void *buf, size_t size, uint64_t o
     return (ssize_t)size;
 }
 
+/*
+ * Get random bytes (for getrandom syscall)
+ */
+void get_random_bytes(void *buf, size_t size) {
+    uint8_t *dst = (uint8_t *)buf;
+    size_t i = 0;
+
+    while (i < size) {
+        uint64_t r = xorshift64();
+        size_t chunk = (size - i < 8) ? (size - i) : 8;
+        for (size_t j = 0; j < chunk; j++) {
+            dst[i++] = (uint8_t)(r >> (j * 8));
+        }
+    }
+}
+
 static node_ops_t urandom_ops = {
     .read = urandom_read,
     .write = null_write,  /* Discard writes */

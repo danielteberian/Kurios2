@@ -417,7 +417,7 @@
 - [ ] Entropy pool
 - [ ] /dev/random (blocking)
 - [ ] /dev/urandom improvements (better PRNG)
-- [ ] getrandom() syscall
+- [x] getrandom() syscall
 
 ### 13.3 Kernel Modules (Optional - Advanced)
 - [ ] Module loading infrastructure

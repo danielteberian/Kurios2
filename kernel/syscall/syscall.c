@@ -1441,6 +1441,33 @@ static int64_t sys_clock_getres(uint64_t clockid, uint64_t res, uint64_t arg3,
 }
 
 /*
+ * sys_getrandom - obtain random bytes
+ */
+static int64_t sys_getrandom(uint64_t buf, uint64_t buflen, uint64_t flags,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    if (!buf || buflen == 0) {
+        return 0;
+    }
+
+    /* Validate buffer */
+    if (!access_ok((void *)buf, buflen)) {
+        return -EFAULT;
+    }
+
+    /* We don't support GRND_RANDOM (blocking /dev/random) */
+    /* Just use our PRNG for all requests */
+    (void)flags;
+
+    /* Generate random bytes */
+    extern void get_random_bytes(void *buf, size_t size);
+    get_random_bytes((void *)buf, buflen);
+
+    return (int64_t)buflen;
+}
+
+/*
  * sys_nanosleep - sleep for specified time
  */
 static int64_t sys_nanosleep(uint64_t req, uint64_t rem, uint64_t arg3,
@@ -2478,6 +2505,7 @@ void syscall_init(void) {
     syscall_register(SYS_GETSID, sys_getsid);
     syscall_register(SYS_CLOCK_GETTIME, sys_clock_gettime);
     syscall_register(SYS_CLOCK_GETRES, sys_clock_getres);
+    syscall_register(SYS_GETRANDOM, sys_getrandom);
 
     /* Socket syscalls - stub implementations returning ENOSYS */
     syscall_register(SYS_SOCKET, sys_unimplemented);

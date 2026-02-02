@@ -80,6 +80,11 @@
 #define SYS_SETRLIMIT   160
 #define SYS_CLOCK_GETTIME 228
 #define SYS_CLOCK_GETRES  229
+#define SYS_GETRANDOM     318
+
+/* getrandom() flags */
+#define GRND_NONBLOCK     0x01   /* Don't block if no entropy */
+#define GRND_RANDOM       0x02   /* Use /dev/random instead of /dev/urandom */
 
 /* waitpid options */
 #define WNOHANG         1       /* Don't block waiting */
