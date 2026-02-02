@@ -672,3 +672,34 @@
   - Alignment macros
   - Bit manipulation
   - Compiler attributes
+
+### Devfs Improvements (Phase 3.3) [IMPLEMENTED]
+- [2026-02-01] Major/minor device number support
+  - **Files:** `kernel/fs/vfs.h`, `kernel/fs/vfs.c`
+  - **Device number type and macros:**
+    - `dev_t` - 32-bit device number type
+    - `MAJOR(dev)`, `MINOR(dev)` - extract major/minor from dev_t
+    - `MAKEDEV(major, minor)` - create dev_t from components
+  - **Standard major numbers defined:**
+    - MEM_MAJOR (1) - /dev/null, /dev/zero, /dev/urandom
+    - TTY_MAJOR (4) - /dev/ttyN
+    - TTYAUX_MAJOR (5) - /dev/tty, /dev/console, /dev/ptmx
+    - UNIX98_PTY_SLAVE (136) - /dev/pts/N
+    - BLOCK_MAJOR (8) - virtio block devices
+  - **VFS structure updates:**
+    - Added `rdev` field to `vfs_node_t` - device number for char/block devices
+    - Added `dev`, `rdev`, `ino` fields to `vfs_stat_t` - for stat() syscall
+- [2026-02-01] mknod() syscall implementation
+  - **Syscall:** SYS_MKNOD (133) - create device nodes
+  - **VFS function:** `vfs_mknod(path, mode, dev)` - creates char/block device nodes
+  - **Mode flags:** S_IFCHR, S_IFBLK, S_IFREG, S_IFIFO for file type
+  - **Permission bits:** S_IRWXU, S_IRWXG, S_IRWXO, etc.
+  - **File type macros:** S_ISCHR(), S_ISBLK(), S_ISREG(), etc.
+- [2026-02-01] Assigned device numbers to existing devices
+  - /dev/console: 5,1 (TTYAUX_MAJOR)
+  - /dev/tty: 5,0 (TTYAUX_MAJOR)
+  - /dev/ptmx: 5,2 (TTYAUX_MAJOR)
+  - /dev/pts/N: 136,N (UNIX98_PTY_SLAVE)
+  - /dev/null: 1,3 (MEM_MAJOR)
+  - /dev/zero: 1,5 (MEM_MAJOR)
+  - /dev/urandom: 1,9 (MEM_MAJOR)

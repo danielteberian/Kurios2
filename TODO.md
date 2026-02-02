@@ -142,11 +142,11 @@
 - [x] File read/write (direct + indirect blocks)
 - [x] Symbolic links (fast + slow symlinks)
 
-### 3.3 Devfs Improvements
-- [ ] Dynamic device node creation
-- [ ] Major/minor number support
-- [ ] mknod() syscall
-- [ ] Device file permissions
+### 3.3 Devfs Improvements [x]
+- [x] Dynamic device node creation (vfs_mknod)
+- [x] Major/minor number support (dev_t, MAJOR/MINOR macros)
+- [x] mknod() syscall (SYS_MKNOD=133)
+- [x] Device file permissions (stored in node->permissions)
 
 ---
 

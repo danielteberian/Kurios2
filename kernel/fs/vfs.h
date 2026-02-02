@@ -72,6 +72,24 @@ typedef struct vfs_stat vfs_stat_t;
 /* Signed size type for read/write return values */
 typedef int64_t ssize_t;
 
+/* Device number type and macros (Linux-compatible) */
+typedef uint32_t dev_t;
+
+#define MAJOR(dev)          (((dev) >> 8) & 0xFFF)
+#define MINOR(dev)          (((dev) & 0xFF) | (((dev) >> 12) & 0xFFF00))
+#define MAKEDEV(major, minor) (((minor) & 0xFF) | (((major) & 0xFFF) << 8) | \
+                               (((minor) & 0xFFF00) << 12))
+
+/* Standard major numbers (Linux-compatible) */
+#define MEM_MAJOR           1       /* /dev/null (1,3), /dev/zero (1,5), /dev/urandom (1,9) */
+#define PTY_MASTER_MAJOR    2       /* PTY masters (BSD style, unused) */
+#define PTY_SLAVE_MAJOR     3       /* PTY slaves (BSD style, unused) */
+#define TTY_MAJOR           4       /* /dev/ttyN */
+#define TTYAUX_MAJOR        5       /* /dev/tty (5,0), /dev/console (5,1), /dev/ptmx (5,2) */
+#define UNIX98_PTY_MASTER   128     /* /dev/ptm (Unix98 PTY masters) */
+#define UNIX98_PTY_SLAVE    136     /* /dev/pts/N (Unix98 PTY slaves) */
+#define BLOCK_MAJOR         8       /* SCSI disk major (also virtio) */
+
 /* Directory entry (for readdir) */
 struct dirent {
     char name[VFS_NAME_MAX + 1];
@@ -87,6 +105,9 @@ struct vfs_stat {
     uint32_t uid;
     uint32_t gid;
     uint32_t nlink;
+    dev_t    dev;           /* Device ID containing file */
+    dev_t    rdev;          /* Device ID (for char/block devices) */
+    uint64_t ino;           /* Inode number */
     uint64_t atime;
     uint64_t mtime;
     uint64_t ctime;
@@ -134,6 +155,7 @@ struct vfs_node {
     uint32_t nlink;
     uint32_t ref_count;
     uint32_t open_count;
+    dev_t    rdev;          /* Device number for char/block devices */
 
     node_ops_t *ops;
     vfs_mount_t *mount;
@@ -215,6 +237,11 @@ int vfs_rmdir(const char *path);
 int vfs_unlink(const char *path);
 int vfs_rename(const char *oldpath, const char *newpath);
 int vfs_readdir(int fd, dirent_t *dent);
+
+/*
+ * Device Node Operations
+ */
+int vfs_mknod(const char *path, uint32_t mode, dev_t dev);
 
 /*
  * Symbolic Link Operations

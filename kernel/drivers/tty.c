@@ -775,6 +775,7 @@ void tty_init(void) {
     console->type = VFS_CHARDEV;
     console->ops = &tty_ops;
     console->permissions = VFS_PERM_READ | VFS_PERM_WRITE;
+    console->rdev = MAKEDEV(TTYAUX_MAJOR, 1);  /* 5,1 */
     console->ref_count = 1;
 
     /* Find /dev and add console as child */
@@ -800,6 +801,7 @@ void tty_init(void) {
         tty_node->type = VFS_CHARDEV;
         tty_node->ops = &tty_ops;
         tty_node->permissions = VFS_PERM_READ | VFS_PERM_WRITE;
+        tty_node->rdev = MAKEDEV(TTYAUX_MAJOR, 0);  /* 5,0 */
         tty_node->ref_count = 1;
         tty_node->parent = dev;
         tty_node->next = dev->children;
@@ -814,6 +816,7 @@ void tty_init(void) {
         null_node->type = VFS_CHARDEV;
         null_node->ops = &null_ops;
         null_node->permissions = VFS_PERM_READ | VFS_PERM_WRITE;
+        null_node->rdev = MAKEDEV(MEM_MAJOR, 3);  /* 1,3 */
         null_node->ref_count = 1;
         null_node->parent = dev;
         null_node->next = dev->children;
@@ -828,6 +831,7 @@ void tty_init(void) {
         zero_node->type = VFS_CHARDEV;
         zero_node->ops = &zero_ops;
         zero_node->permissions = VFS_PERM_READ | VFS_PERM_WRITE;
+        zero_node->rdev = MAKEDEV(MEM_MAJOR, 5);  /* 1,5 */
         zero_node->ref_count = 1;
         zero_node->parent = dev;
         zero_node->next = dev->children;
@@ -842,6 +846,7 @@ void tty_init(void) {
         urandom_node->type = VFS_CHARDEV;
         urandom_node->ops = &urandom_ops;
         urandom_node->permissions = VFS_PERM_READ | VFS_PERM_WRITE;
+        urandom_node->rdev = MAKEDEV(MEM_MAJOR, 9);  /* 1,9 */
         urandom_node->ref_count = 1;
         urandom_node->parent = dev;
         urandom_node->next = dev->children;

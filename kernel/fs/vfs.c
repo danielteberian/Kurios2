@@ -683,6 +683,9 @@ int vfs_stat(const char *path, vfs_stat_t *st) {
     st->uid = node->uid;
     st->gid = node->gid;
     st->nlink = node->nlink;
+    st->dev = 0;  /* TODO: get from mount */
+    st->rdev = node->rdev;
+    st->ino = (uint64_t)(uintptr_t)node;  /* Use node address as inode number */
     st->atime = node->atime;
     st->mtime = node->mtime;
     st->ctime = node->ctime;
@@ -712,6 +715,9 @@ int vfs_fstat(int fd, vfs_stat_t *st) {
     st->uid = node->uid;
     st->gid = node->gid;
     st->nlink = node->nlink;
+    st->dev = 0;  /* TODO: get from mount */
+    st->rdev = node->rdev;
+    st->ino = (uint64_t)(uintptr_t)node;  /* Use node address as inode number */
     st->atime = node->atime;
     st->mtime = node->mtime;
     st->ctime = node->ctime;
@@ -991,6 +997,83 @@ int vfs_readdir(int fd, dirent_t *dent) {
     }
 
     return err;
+}
+
+/*
+ * Device Node Operations
+ */
+int vfs_mknod(const char *path, uint32_t mode, dev_t dev) {
+    if (!path) {
+        return VFS_EINVAL;
+    }
+
+    /* Get parent directory and node name */
+    char name[VFS_NAME_MAX + 1];
+    vfs_node_t *parent = vfs_lookup_parent(path, name, sizeof(name));
+    if (!parent) {
+        return VFS_ENOENT;
+    }
+
+    if (parent->type != VFS_DIR) {
+        vfs_node_unref(parent);
+        return VFS_ENOTDIR;
+    }
+
+    /* Check if name already exists */
+    vfs_node_t *existing = lookup_in_dir(parent, name);
+    if (existing) {
+        vfs_node_unref(existing);
+        vfs_node_unref(parent);
+        return VFS_EEXIST;
+    }
+
+    /* Determine VFS type from mode */
+    uint32_t vfs_type;
+    uint32_t file_type = mode & 0170000;  /* S_IFMT */
+
+    switch (file_type) {
+    case 0020000:  /* S_IFCHR */
+        vfs_type = VFS_CHARDEV;
+        break;
+    case 0060000:  /* S_IFBLK */
+        vfs_type = VFS_BLKDEV;
+        break;
+    case 0100000:  /* S_IFREG */
+        vfs_type = VFS_FILE;
+        break;
+    case 0010000:  /* S_IFIFO */
+        vfs_type = VFS_PIPE;
+        break;
+    default:
+        vfs_node_unref(parent);
+        return VFS_EINVAL;
+    }
+
+    /* Create the node directly (ramfs-style in-memory node) */
+    vfs_node_t *node = vfs_node_alloc();
+    if (!node) {
+        vfs_node_unref(parent);
+        return VFS_ENOMEM;
+    }
+
+    strncpy(node->name, name, VFS_NAME_MAX);
+    node->name[VFS_NAME_MAX] = '\0';
+    node->type = vfs_type;
+    node->permissions = mode & 0777;
+    node->rdev = dev;
+    node->uid = 0;  /* root */
+    node->gid = 0;  /* root */
+
+    /* Link to parent directory */
+    node->parent = parent;
+    node->next = parent->children;
+    if (parent->children) {
+        parent->children->prev = node;
+    }
+    parent->children = node;
+
+    vfs_node_unref(parent);
+    return VFS_OK;
 }
 
 /*

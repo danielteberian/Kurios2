@@ -208,6 +208,7 @@ static vfs_node_t *pty_create_slave_node(pty_t *pty) {
     node->type = VFS_CHARDEV;
     node->ops = &pty_slave_ops;
     node->permissions = VFS_PERM_READ | VFS_PERM_WRITE;
+    node->rdev = MAKEDEV(UNIX98_PTY_SLAVE, pty->number);  /* 136,N */
     node->ref_count = 1;
     node->private = pty;
 
@@ -579,6 +580,7 @@ void pty_init(void) {
     ptmx->type = VFS_CHARDEV;
     ptmx->ops = &ptmx_ops;
     ptmx->permissions = VFS_PERM_READ | VFS_PERM_WRITE;
+    ptmx->rdev = MAKEDEV(TTYAUX_MAJOR, 2);  /* 5,2 */
     ptmx->ref_count = 1;
 
     /* Add to /dev */

@@ -90,9 +90,46 @@
 #define SYS_CHOWN       92
 #define SYS_FCHOWN      93
 #define SYS_LCHOWN      94
+#define SYS_MKNOD         133
 #define SYS_CLOCK_GETTIME 228
 #define SYS_CLOCK_GETRES  229
 #define SYS_GETRANDOM     318
+
+/* File type bits for mknod mode */
+#define S_IFMT      0170000     /* File type mask */
+#define S_IFSOCK    0140000     /* Socket */
+#define S_IFLNK     0120000     /* Symbolic link */
+#define S_IFREG     0100000     /* Regular file */
+#define S_IFBLK     0060000     /* Block device */
+#define S_IFDIR     0040000     /* Directory */
+#define S_IFCHR     0020000     /* Character device */
+#define S_IFIFO     0010000     /* FIFO */
+
+/* Permission bits */
+#define S_ISUID     04000       /* Set-user-ID */
+#define S_ISGID     02000       /* Set-group-ID */
+#define S_ISVTX     01000       /* Sticky bit */
+#define S_IRWXU     00700       /* Owner: rwx */
+#define S_IRUSR     00400       /* Owner: read */
+#define S_IWUSR     00200       /* Owner: write */
+#define S_IXUSR     00100       /* Owner: execute */
+#define S_IRWXG     00070       /* Group: rwx */
+#define S_IRGRP     00040       /* Group: read */
+#define S_IWGRP     00020       /* Group: write */
+#define S_IXGRP     00010       /* Group: execute */
+#define S_IRWXO     00007       /* Other: rwx */
+#define S_IROTH     00004       /* Other: read */
+#define S_IWOTH     00002       /* Other: write */
+#define S_IXOTH     00001       /* Other: execute */
+
+/* File type test macros */
+#define S_ISREG(m)  (((m) & S_IFMT) == S_IFREG)
+#define S_ISDIR(m)  (((m) & S_IFMT) == S_IFDIR)
+#define S_ISCHR(m)  (((m) & S_IFMT) == S_IFCHR)
+#define S_ISBLK(m)  (((m) & S_IFMT) == S_IFBLK)
+#define S_ISFIFO(m) (((m) & S_IFMT) == S_IFIFO)
+#define S_ISLNK(m)  (((m) & S_IFMT) == S_IFLNK)
+#define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
 
 /* getrandom() flags */
 #define GRND_NONBLOCK     0x01   /* Don't block if no entropy */

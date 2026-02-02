@@ -1009,6 +1009,22 @@ static int64_t sys_mkdir(uint64_t pathname, uint64_t mode, uint64_t arg3,
 }
 
 /*
+ * sys_mknod - create a special file (device node)
+ */
+static int64_t sys_mknod(uint64_t pathname, uint64_t mode, uint64_t dev,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    return vfs_mknod(path, (uint32_t)mode, (dev_t)dev);
+}
+
+/*
  * sys_rmdir - remove a directory
  */
 static int64_t sys_rmdir(uint64_t pathname, uint64_t arg2, uint64_t arg3,
@@ -2821,6 +2837,7 @@ void syscall_init(void) {
     syscall_register(SYS_FCHDIR, sys_fchdir);
     syscall_register(SYS_RENAME, sys_rename);
     syscall_register(SYS_MKDIR, sys_mkdir);
+    syscall_register(SYS_MKNOD, sys_mknod);
     syscall_register(SYS_RMDIR, sys_rmdir);
     syscall_register(SYS_UNLINK, sys_unlink);
     syscall_register(SYS_READLINK, sys_readlink);
