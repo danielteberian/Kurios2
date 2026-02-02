@@ -9,11 +9,12 @@
 #include "../include/types.h"  /* For ssize_t */
 
 /* Socket address family */
+#define AF_UNIX         1
 #define AF_INET         2
 
 /* Socket types */
-#define SOCK_STREAM     1   /* TCP */
-#define SOCK_DGRAM      2   /* UDP */
+#define SOCK_STREAM     1   /* TCP or Unix stream */
+#define SOCK_DGRAM      2   /* UDP or Unix datagram */
 
 /* Socket address structure (IPv4) */
 typedef struct sockaddr_in {
@@ -39,12 +40,16 @@ typedef struct socket_recv_buf {
     uint16_t src_port;
 } socket_recv_buf_t;
 
-/* Forward declaration for TCP */
+/* Forward declarations */
 struct tcp_connection;
+struct unix_socket;
 
 /* Socket structure */
 typedef struct socket {
+    int domain;                 /* AF_INET or AF_UNIX */
     int type;                   /* SOCK_STREAM or SOCK_DGRAM */
+
+    /* AF_INET specific */
     uint32_t local_ip;          /* Local IP address */
     uint16_t local_port;        /* Local port */
     uint32_t remote_ip;         /* Remote IP (for connected sockets) */
@@ -58,6 +63,10 @@ typedef struct socket {
 
     /* Receive buffer (for SOCK_DGRAM) */
     socket_recv_buf_t *recv_buf;
+
+    /* AF_UNIX specific */
+    struct unix_socket *unix_sock;
+
     spinlock_t lock;
 } socket_t;
 
@@ -65,7 +74,7 @@ typedef struct socket {
 void socket_init(void);
 
 /* Socket operations */
-socket_t *socket_create(int type);
+socket_t *socket_create(int domain, int type);
 void socket_destroy(socket_t *sock);
 int socket_bind(socket_t *sock, uint32_t ip, uint16_t port);
 int socket_connect(socket_t *sock, uint32_t ip, uint16_t port);

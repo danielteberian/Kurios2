@@ -27,9 +27,14 @@ void socket_init(void) {
 /*
  * Create a socket
  */
-socket_t *socket_create(int type) {
+socket_t *socket_create(int domain, int type) {
     if (type != SOCK_DGRAM && type != SOCK_STREAM) {
         DEBUG("socket_create: Invalid socket type %d", type);
+        return NULL;
+    }
+
+    if (domain != AF_INET && domain != AF_UNIX) {
+        DEBUG("socket_create: Invalid domain %d", domain);
         return NULL;
     }
 
@@ -37,6 +42,7 @@ socket_t *socket_create(int type) {
     if (!sock) return NULL;
 
     memset(sock, 0, sizeof(socket_t));
+    sock->domain = domain;
     sock->type = type;
     sock->local_ip = 0;
     sock->local_port = 0;

@@ -3172,6 +3172,7 @@ int syscall_register(int num, syscall_handler_t handler) {
  * ============================================================================ */
 
 #include "../net/socket.h"
+#include "../net/unix_socket.h"
 
 /* Socket file descriptor table (simple array for now) */
 #define MAX_SOCKET_FDS  256
@@ -3184,7 +3185,7 @@ static int64_t sys_socket(uint64_t domain, uint64_t type, uint64_t protocol,
                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
     (void)protocol; (void)arg4; (void)arg5; (void)arg6;
 
-    if (domain != AF_INET) {
+    if (domain != AF_INET && domain != AF_UNIX) {
         return -97;  /* EAFNOSUPPORT */
     }
 
@@ -3192,9 +3193,18 @@ static int64_t sys_socket(uint64_t domain, uint64_t type, uint64_t protocol,
         return -95;  /* EOPNOTSUPP */
     }
 
-    socket_t *sock = socket_create((int)type);
+    socket_t *sock = socket_create((int)domain, (int)type);
     if (!sock) {
         return -24;  /* EMFILE */
+    }
+
+    /* For AF_UNIX, create the Unix socket structure */
+    if (domain == AF_UNIX) {
+        sock->unix_sock = unix_socket_create((int)type);
+        if (!sock->unix_sock) {
+            socket_destroy(sock);
+            return -24;  /* EMFILE */
+        }
     }
 
     /* Find free socket FD */
@@ -3220,13 +3230,23 @@ static int64_t sys_bind(uint64_t sockfd, uint64_t addr_ptr, uint64_t addrlen,
         return -9;  /* EBADF */
     }
 
-    sockaddr_in_t addr;
-    if (copy_from_user(&addr, (void *)addr_ptr, sizeof(addr)) < 0) {
-        return -14;  /* EFAULT */
-    }
-
     socket_t *sock = socket_fds[sockfd];
-    return socket_bind(sock, addr.sin_addr, addr.sin_port);
+
+    if (sock->domain == AF_UNIX) {
+        /* Unix domain socket */
+        sockaddr_un_t addr_un;
+        if (copy_from_user(&addr_un, (void *)addr_ptr, sizeof(addr_un)) < 0) {
+            return -14;  /* EFAULT */
+        }
+        return unix_socket_bind(sock->unix_sock, addr_un.sun_path);
+    } else {
+        /* Internet socket */
+        sockaddr_in_t addr;
+        if (copy_from_user(&addr, (void *)addr_ptr, sizeof(addr)) < 0) {
+            return -14;  /* EFAULT */
+        }
+        return socket_bind(sock, addr.sin_addr, addr.sin_port);
+    }
 }
 
 /*
@@ -3240,13 +3260,23 @@ static int64_t sys_connect(uint64_t sockfd, uint64_t addr_ptr, uint64_t addrlen,
         return -9;
     }
 
-    sockaddr_in_t addr;
-    if (copy_from_user(&addr, (void *)addr_ptr, sizeof(addr)) < 0) {
-        return -14;
-    }
-
     socket_t *sock = socket_fds[sockfd];
-    return socket_connect(sock, addr.sin_addr, addr.sin_port);
+
+    if (sock->domain == AF_UNIX) {
+        /* Unix domain socket */
+        sockaddr_un_t addr_un;
+        if (copy_from_user(&addr_un, (void *)addr_ptr, sizeof(addr_un)) < 0) {
+            return -14;
+        }
+        return unix_socket_connect(sock->unix_sock, addr_un.sun_path);
+    } else {
+        /* Internet socket */
+        sockaddr_in_t addr;
+        if (copy_from_user(&addr, (void *)addr_ptr, sizeof(addr)) < 0) {
+            return -14;
+        }
+        return socket_connect(sock, addr.sin_addr, addr.sin_port);
+    }
 }
 
 /*
@@ -3261,7 +3291,12 @@ static int64_t sys_listen(uint64_t sockfd, uint64_t backlog, uint64_t arg3,
     }
 
     socket_t *sock = socket_fds[sockfd];
-    return socket_listen(sock, (int)backlog);
+
+    if (sock->domain == AF_UNIX) {
+        return unix_socket_listen(sock->unix_sock, (int)backlog);
+    } else {
+        return socket_listen(sock, (int)backlog);
+    }
 }
 
 /*
@@ -3276,10 +3311,28 @@ static int64_t sys_accept(uint64_t sockfd, uint64_t addr_ptr, uint64_t addrlen_p
     }
 
     socket_t *listener = socket_fds[sockfd];
-    socket_t *new_sock = socket_accept(listener);
+    socket_t *new_sock = NULL;
 
-    if (!new_sock) {
-        return -11;  /* EAGAIN - no connections ready */
+    if (listener->domain == AF_UNIX) {
+        /* Accept Unix socket connection */
+        unix_socket_t *unix_conn = unix_socket_accept(listener->unix_sock);
+        if (!unix_conn) {
+            return -11;  /* EAGAIN */
+        }
+
+        /* Create wrapper socket_t */
+        new_sock = socket_create(AF_UNIX, listener->type);
+        if (!new_sock) {
+            unix_socket_destroy(unix_conn);
+            return -24;  /* EMFILE */
+        }
+        new_sock->unix_sock = unix_conn;
+    } else {
+        /* Accept Internet socket connection */
+        new_sock = socket_accept(listener);
+        if (!new_sock) {
+            return -11;  /* EAGAIN - no connections ready */
+        }
     }
 
     /* Find free socket FD for new connection */
@@ -3289,16 +3342,28 @@ static int64_t sys_accept(uint64_t sockfd, uint64_t addr_ptr, uint64_t addrlen_p
 
             /* Fill in client address if requested */
             if (addr_ptr) {
-                sockaddr_in_t addr;
-                addr.sin_family = AF_INET;
-                addr.sin_addr = new_sock->remote_ip;
-                addr.sin_port = new_sock->remote_port;
-                memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
+                if (new_sock->domain == AF_UNIX) {
+                    /* For Unix sockets, we could return the path but usually it's not needed */
+                    sockaddr_un_t addr_un;
+                    addr_un.sun_family = AF_UNIX;
+                    addr_un.sun_path[0] = '\0';  /* Anonymous */
+                    if (copy_to_user((void *)addr_ptr, &addr_un, sizeof(addr_un)) < 0) {
+                        socket_destroy(new_sock);
+                        socket_fds[i] = NULL;
+                        return -14;  /* EFAULT */
+                    }
+                } else {
+                    sockaddr_in_t addr;
+                    addr.sin_family = AF_INET;
+                    addr.sin_addr = new_sock->remote_ip;
+                    addr.sin_port = new_sock->remote_port;
+                    memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
 
-                if (copy_to_user((void *)addr_ptr, &addr, sizeof(addr)) < 0) {
-                    socket_destroy(new_sock);
-                    socket_fds[i] = NULL;
-                    return -14;  /* EFAULT */
+                    if (copy_to_user((void *)addr_ptr, &addr, sizeof(addr)) < 0) {
+                        socket_destroy(new_sock);
+                        socket_fds[i] = NULL;
+                        return -14;  /* EFAULT */
+                    }
                 }
             }
 

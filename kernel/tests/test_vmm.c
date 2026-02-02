@@ -4,8 +4,10 @@
 #include "../mm/vmm.h"
 #include "../mm/pmm.h"
 
-/* Test virtual address range (unused kernel space) */
-#define TEST_VIRT_BASE  0xFFFFFFFF90000000UL
+/* Test virtual address range (unused kernel space)
+ * Note: 0xFFFFFFFF90000000-0xFFFFFFFF90300000 is used for VGA, APIC, HPET, initrd
+ * Use 0xFFFFFFFF91000000+ for tests to avoid conflicts */
+#define TEST_VIRT_BASE  0xFFFFFFFF91000000UL
 
 /*
  * Test: Verify existing kernel mapping

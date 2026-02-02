@@ -14,6 +14,9 @@ typedef uint64_t virt_addr_t;
 typedef uint64_t size_t;
 typedef int64_t  ssize_t;
 
+/* File mode and permissions */
+typedef uint32_t mode_t;
+
 /* Architecture-specific types */
 typedef uint64_t reg_t;         /* Register-sized value */
 
