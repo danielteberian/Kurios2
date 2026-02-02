@@ -703,3 +703,81 @@
   - /dev/null: 1,3 (MEM_MAJOR)
   - /dev/zero: 1,5 (MEM_MAJOR)
   - /dev/urandom: 1,9 (MEM_MAJOR)
+
+### Process Groups and Sessions (Phase 4.1) [IMPLEMENTED]
+- [2026-02-01] Process group operations module
+  - **New files:** `kernel/process/pgrp.c`, `kernel/process/pgrp.h`
+  - **Functions:**
+    - `pgrp_send_signal(pgrp, sig)` - Broadcast signal to all processes in group
+    - `pgrp_exists(pgrp)` - Check if process group has active members
+    - `pgrp_validate_setpgid(target_pid, new_pgrp)` - POSIX validation for setpgid
+    - `pgrp_is_orphaned(pgrp)` - Detect orphaned process groups
+  - **Implementation:** O(n) iteration over process table (acceptable for n=256)
+  - **POSIX compliance:** Validates session boundaries, exec restrictions, etc.
+- [2026-02-01] Enhanced kill() syscall for process groups
+  - **File:** `kernel/syscall/syscall.c`
+  - **Semantics:**
+    - `kill(pid, sig)` where pid > 0: Send to specific process
+    - `kill(0, sig)`: Send to current process group
+    - `kill(-pgrp, sig)` where pgrp > 0: Send to process group pgrp
+    - `kill(-1, sig)`: Send to all processes (not implemented yet)
+- [2026-02-01] Enhanced setpgid() syscall with POSIX validation
+  - **File:** `kernel/syscall/syscall.c`
+  - **Validation rules:**
+    - Can only call setpgid on self or child
+    - Cannot change pgid of child after it has exec'd
+    - Cannot move to different session
+    - New group must be in same session
+
+### Job Control (Phase 4.2 - Partial) [IMPLEMENTED]
+- [2026-02-01] Process stop/continue infrastructure
+  - **Files:** `kernel/process/process.h`, `kernel/process/process.c`
+  - **New process state:** `PROC_STOPPED` - for stopped processes
+  - **New fields in process_t:**
+    - `struct tty *ctty` - Controlling terminal pointer
+    - `uint32_t exec_count` - Number of exec() calls (for setpgid validation)
+    - `int stop_signal` - Signal that stopped the process
+    - `bool stop_reported` - Parent notified of stop via wait()
+    - `bool continue_reported` - Parent notified of continuation via wait()
+  - **Functions:**
+    - `process_stop(proc, signum)` - Mark process as stopped, remove from scheduler
+    - `process_continue(proc)` - Resume stopped process, add to scheduler
+    - `process_find_stopped_child(parent_pid, child_pid)` - For wait() WUNTRACED
+    - `process_find_continued_child(parent_pid, child_pid)` - For wait() WCONTINUED
+- [2026-02-01] Signal handling for job control
+  - **Files:** `kernel/signal/signal.h`, `kernel/signal/signal.c`
+  - **Updated default signal handlers:**
+    - SIG_ACTION_STOP: Calls `process_stop()`, sends SIGCHLD to parent
+    - SIG_ACTION_CONT: Calls `process_continue()`, sends SIGCHLD to parent
+  - **Auto-resume on SIGCONT:**
+    - Updated `signal_send()` to resume stopped processes when SIGCONT received
+    - Clears pending SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU signals
+  - **New SIGCHLD variants:**
+    - `signal_send_sigchld_stopped()` - Respects SA_NOCLDSTOP flag
+    - `signal_send_sigchld_continued()` - Notifies parent of continuation
+  - **Signals supported:** SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU, SIGCONT
+
+### Enhanced wait() with WUNTRACED/WCONTINUED (Phase 4.3) [IMPLEMENTED]
+- [2026-02-01] waitpid() options support
+  - **Files:** `kernel/syscall/syscall.h`, `userspace/libc/syscall.h`
+  - **New flags:**
+    - `WNOHANG` (1) - Don't block waiting
+    - `WUNTRACED` (2) - Also return stopped children
+    - `WCONTINUED` (8) - Also return continued children
+  - **New status macros:**
+    - `WIFSTOPPED(status)` - True if child stopped
+    - `WSTOPSIG(status)` - Extract stop signal
+    - `WIFCONTINUED(status)` - True if child continued
+- [2026-02-01] Rewritten sys_wait4() implementation
+  - **File:** `kernel/syscall/syscall.c`
+  - **Priority order:**
+    1. Check for zombie children (existing behavior)
+    2. Check for stopped children (if WUNTRACED flag set)
+    3. Check for continued children (if WCONTINUED flag set)
+  - **Status encoding:**
+    - Normal exit: `(exit_code & 0xff) << 8`
+    - Signal death: `signal & 0x7f`
+    - Stopped: `0x7f | ((signal & 0xff) << 8)`
+    - Continued: `0xffff`
+  - **Reporting:** Marks children as stop_reported/continue_reported to avoid duplicates
+  - **WNOHANG:** Returns 0 if no state change, not blocking

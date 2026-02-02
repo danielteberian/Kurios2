@@ -150,27 +150,39 @@
 
 ---
 
-## Phase 4: Process Model Enhancements
+## Phase 4: Process Model Enhancements [PARTIAL]
 
-### 4.1 Process Groups and Sessions
-- [ ] Process group leadership (setpgid already exists)
-- [ ] Session leadership (setsid already exists)
-- [ ] Controlling terminal association
-- [ ] Foreground process group tracking
-- [ ] SIGHUP on session leader death
+### 4.1 Process Groups and Sessions [x]
+- [x] Process group signal broadcast (pgrp_send_signal)
+- [x] Process group validation (pgrp_validate_setpgid)
+- [x] Process group existence checking (pgrp_exists)
+- [x] Orphaned process group detection (pgrp_is_orphaned)
+- [x] Enhanced kill() for process groups (pid=0, pid<-1)
+- [x] POSIX setpgid() validation
+- [~] Controlling terminal association (TIOCSCTTY ioctl - needs TTY integration)
+- [~] Foreground process group tracking (infrastructure ready)
+- [~] SIGHUP on session leader death (infrastructure ready)
 
-### 4.2 Job Control
-- [ ] SIGTSTP (Ctrl+Z) handling
-- [ ] SIGCONT for resuming stopped processes
-- [ ] SIGTTIN/SIGTTOU for background I/O
-- [ ] wait() with WUNTRACED, WCONTINUED
-- [ ] Orphaned process group handling
+### 4.2 Job Control [~]
+- [x] PROC_STOPPED state for stopped processes
+- [x] SIGTSTP (Ctrl+Z) handling via process_stop()
+- [x] SIGCONT for resuming stopped processes via process_continue()
+- [x] SIGCHLD notification on stop/continue
+- [x] Auto-resume stopped processes on SIGCONT
+- [x] Orphaned process group handling
+- [ ] SIGTTIN/SIGTTOU for background I/O (needs TTY integration)
+- [ ] TTY access control checks (tty_check_read_access/tty_check_write_access)
 
-### 4.3 wait() Improvements
-- [ ] waitpid() with options (WNOHANG, WUNTRACED, WCONTINUED)
-- [ ] wait4() with rusage (already stubbed)
-- [ ] Proper zombie reaping
-- [ ] init (PID 1) adopts orphans
+### 4.3 wait() Improvements [x]
+- [x] waitpid() with WUNTRACED flag
+- [x] waitpid() with WCONTINUED flag
+- [x] Status encoding for stopped processes (0x7f | (signal << 8))
+- [x] Status encoding for continued processes (0xffff)
+- [x] WIFSTOPPED/WSTOPSIG/WIFCONTINUED macros
+- [x] Proper stop_reported/continue_reported tracking
+- [x] wait4() with rusage parameter (rusage still ignored)
+- [x] Proper zombie reaping
+- [ ] init (PID 1) adopts orphans (low priority)
 
 ### 4.4 Credentials
 - [ ] Real/effective/saved UID/GID

@@ -266,8 +266,10 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 
 | File | Purpose |
 |------|---------|
-| `process.c` | Process table, PID allocation, `process_create()`, `process_exit()`, `process_current()`. Kernel process is PID 0 |
-| `process.h` | Process structures: `process_t`, states, `process_init()` |
+| `process.c` | Process table, PID allocation, `process_create()`, `process_exit()`, `process_current()`, `process_stop()`, `process_continue()`. Kernel process is PID 0. Job control support: stop/continue/find_stopped/find_continued |
+| `process.h` | Process structures: `process_t`, states (UNUSED/EMBRYO/READY/RUNNING/BLOCKED/STOPPED/ZOMBIE/DEAD), `process_init()`. Fields: ctty, exec_count, stop_signal, stop_reported, continue_reported |
+| `pgrp.c` | Process group operations. `pgrp_send_signal()` (broadcast to group), `pgrp_exists()`, `pgrp_validate_setpgid()` (POSIX validation), `pgrp_is_orphaned()` |
+| `pgrp.h` | Process group API declarations |
 
 ---
 
@@ -285,8 +287,8 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 
 | File | Purpose |
 |------|---------|
-| `signal.c` | Signal infrastructure. `signal_deliver_pending()`, `sigaction`, `sigreturn`, SIGCHLD on child exit |
-| `signal.h` | Signal numbers, structures: `sigaction_t`, `sigset_t`, `siginfo_t` |
+| `signal.c` | Signal infrastructure. `signal_deliver_pending()`, `sigaction`, `sigreturn`, SIGCHLD on child exit. Job control: `handle_default_signal()` calls `process_stop()` for STOP signals, `process_continue()` for CONT. Auto-resume on SIGCONT. `signal_send_sigchld_stopped()`, `signal_send_sigchld_continued()` |
+| `signal.h` | Signal numbers (SIGHUP-SIGSYS), structures: `sigaction_t`, `sigset_t`, `siginfo_t`, `signal_state_t`. Default actions: TERM/CORE/STOP/CONT/IGN. SA_NOCLDSTOP flag support |
 
 ---
 
