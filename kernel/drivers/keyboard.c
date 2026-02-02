@@ -202,11 +202,10 @@ static void keyboard_handler(cpu_state_t *state) {
         return;
     }
 
-    /* Convert to ASCII and buffer */
+    /* Convert to ASCII and send to TTY */
     char c = scancode_to_char(scancode);
     if (c != 0) {
-        kbd_buffer_put(c);
-        tty_input_char(c);  /* Also send to TTY */
+        tty_input_char(c);  /* Send to TTY for line discipline processing */
     }
 }
 

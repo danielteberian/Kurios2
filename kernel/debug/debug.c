@@ -42,24 +42,37 @@ static void output_char(char c);
 static void output_string(const char *str);
 static int format_print(const char *fmt, va_list args);
 
+/* Early serial output for debugging */
+static void early_serial_char(char c) {
+    /* Direct write to COM1 data port */
+    while ((inb(0x3F8 + 5) & 0x20) == 0);  /* Wait for transmit ready */
+    outb(0x3F8, c);
+}
+
 /* Initialize debug subsystem */
 void debug_init(void) {
+    early_serial_char('D');  /* Debug: entering debug_init */
     serial_init_default();
+    early_serial_char('S');  /* Debug: serial initialized */
     serial_enabled = true;
     vga_enabled = false;
 
+    early_serial_char('V');  /* Debug: about to clear VGA */
     /* Clear VGA screen */
     for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
         vga_buffer[i] = VGA_COLOR | ' ';
     }
+    early_serial_char('C');  /* Debug: VGA cleared */
     vga_x = 0;
     vga_y = 0;
 
+    early_serial_char('P');  /* Debug: about to kprintf */
     kprintf("\n");
     kprintf("===========================================\n");
     kprintf("  Kurios2 Kernel Debug System Initialized\n");
     kprintf("===========================================\n");
     kprintf("\n");
+    early_serial_char('E');  /* Debug: debug_init done */
 }
 
 /* Set log level */

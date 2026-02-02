@@ -183,20 +183,15 @@ thread_t *thread_create(const char *name, thread_entry_t entry, void *arg) {
         return NULL;
     }
 
-    /* Allocate stack from physical memory
-     * We use identity-mapped low memory, so physical address = virtual address
-     * for addresses below 4GB that are identity-mapped */
-    uint64_t stack_phys = alloc_pages(STACK_ORDER);
-    if (stack_phys == 0) {
+    /* Allocate stack from kernel heap (properly mapped virtual memory)
+     * Using kmalloc ensures the stack is in the kernel's virtual address space */
+    void *stack_base = kmalloc(DEFAULT_STACK_SIZE);
+    if (!stack_base) {
         kfree(thread);
         spin_unlock_irqrestore(&thread_lock, flags);
         ERROR("Failed to allocate thread stack");
         return NULL;
     }
-
-    /* Use physical address directly - assumes identity mapping for low memory
-     * In a more complete kernel, we'd use vmm_map_pages to map this properly */
-    void *stack_base = (void *)stack_phys;
 
     /* Initialize thread structure */
     thread->tid = tid;

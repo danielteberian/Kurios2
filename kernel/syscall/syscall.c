@@ -18,7 +18,9 @@
 #include "../mm/slab.h"
 #include "../drivers/keyboard.h"
 #include "../drivers/pit.h"
+#include "../drivers/tty.h"
 #include "../signal/signal.h"
+#include "../arch/x86_64/cpu.h"
 #include "lib/string.h"
 
 /*
@@ -30,8 +32,10 @@
 #define MSR_CSTAR       0xC0000083  /* SYSCALL entry point (compat mode, unused) */
 #define MSR_SFMASK      0xC0000084  /* RFLAGS mask for SYSCALL */
 
-/* EFER bits */
+/* EFER bits (defined in cpu.h, guard against redefinition) */
+#ifndef EFER_SCE
 #define EFER_SCE        (1UL << 0)  /* SYSCALL/SYSRET enable */
+#endif
 
 /* RFLAGS bits to mask on SYSCALL entry */
 #define RFLAGS_IF       (1UL << 9)  /* Interrupt Flag */
@@ -128,64 +132,46 @@ static int64_t sys_read(uint64_t fd, uint64_t buf, uint64_t count,
         return -EFAULT;
     }
 
-    /* Handle stdin - read from keyboard */
+    /* Handle stdin - read from TTY (with line discipline) */
     if (fd == 0) {
         char kbuf[READ_CHUNK_SIZE];
-        uint64_t bytes_read = 0;
+        uint64_t total = 0;
 
-        /*
-         * Read characters until:
-         * - We've filled the buffer (count bytes)
-         * - We get a newline (line-buffered input)
-         * - No more input available (non-blocking after first char)
-         */
-        while (bytes_read < count) {
-            char c;
+        while (total < count) {
+            uint64_t chunk = count - total;
+            if (chunk > READ_CHUNK_SIZE) {
+                chunk = READ_CHUNK_SIZE;
+            }
 
-            if (bytes_read == 0) {
-                /* First character: block until available */
-                c = keyboard_getchar();
-            } else {
-                /* Subsequent characters: non-blocking */
-                c = keyboard_getchar_nonblock();
-                if (c == 0) {
-                    /* No more input available */
-                    break;
+            /* Read from TTY - handles canonical mode, echo, signals */
+            ssize_t n = tty_read(kbuf, chunk);
+            if (n < 0) {
+                if (n == -11) {  /* EAGAIN - no data ready yet */
+                    /* In canonical mode, block until line ready.
+                     * Enable interrupts so keyboard IRQ can fire. */
+                    sti();
+                    hlt();  /* Wait for interrupt (keyboard input) */
+                    continue;
                 }
+                return total > 0 ? (int64_t)total : (int64_t)n;
+            }
+            if (n == 0) {
+                break;  /* EOF */
             }
 
-            /* Store in kernel buffer */
-            kbuf[bytes_read % READ_CHUNK_SIZE] = c;
-            bytes_read++;
-
-            /* Copy chunk to user space when buffer is full */
-            if (bytes_read % READ_CHUNK_SIZE == 0) {
-                int err = copy_to_user((void *)(buf + bytes_read - READ_CHUNK_SIZE),
-                                       kbuf, READ_CHUNK_SIZE);
-                if (err < 0) {
-                    return bytes_read > READ_CHUNK_SIZE ?
-                           (int64_t)(bytes_read - READ_CHUNK_SIZE) : err;
-                }
-            }
-
-            /* Stop on newline (line-buffered mode) */
-            if (c == '\n') {
-                break;
-            }
-        }
-
-        /* Copy remaining bytes to user space */
-        uint64_t remaining = bytes_read % READ_CHUNK_SIZE;
-        if (remaining > 0 || (bytes_read > 0 && bytes_read % READ_CHUNK_SIZE == 0)) {
-            uint64_t copy_size = remaining > 0 ? remaining : READ_CHUNK_SIZE;
-            uint64_t offset = bytes_read - copy_size;
-            int err = copy_to_user((void *)(buf + offset), kbuf, copy_size);
+            /* Copy to user space */
+            int err = copy_to_user((void *)(buf + total), kbuf, n);
             if (err < 0) {
-                return offset > 0 ? (int64_t)offset : err;
+                return total > 0 ? (int64_t)total : err;
             }
+
+            total += n;
+
+            /* In canonical mode, return after one read (line at a time) */
+            break;
         }
 
-        return (int64_t)bytes_read;
+        return (int64_t)total;
     }
 
     /* Handle VFS files (fd > 2) */

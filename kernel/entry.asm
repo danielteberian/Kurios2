@@ -35,6 +35,13 @@ extern __fini_array_end
 ; ============================================================================
 section .text
 _start:
+    ; DEBUG: Print 'K' to serial to confirm kernel entry
+    mov dx, 0x3F8           ; COM1 data port
+    mov al, 'K'
+    out dx, al
+    mov al, 10              ; newline
+    out dx, al
+
     ; Save boot_info pointer FIRST (before any EDI modification!)
     ; CRITICAL: In 64-bit mode, writing to EDI zero-extends to RDI, destroying it
     mov r15, rdi
@@ -58,6 +65,11 @@ _start:
     xor rax, rax
     rep stosq
 
+    ; DEBUG: BSS cleared
+    mov dx, 0x3F8
+    mov al, '1'
+    out dx, al
+
     ; Call global constructors
     ; __init_array_start and __init_array_end contain function pointers
     mov rbx, __init_array_start
@@ -74,8 +86,20 @@ _start:
     jmp .call_ctors
 .ctors_done:
 
+    ; DEBUG: Constructors done
+    mov dx, 0x3F8
+    mov al, '2'
+    out dx, al
+
     ; Restore boot_info pointer for kernel_main
     mov rdi, r15
+
+    ; DEBUG: About to call kernel_main
+    mov dx, 0x3F8
+    mov al, '3'
+    out dx, al
+    mov al, 10
+    out dx, al
 
     ; Call kernel_main(boot_info)
     call kernel_main

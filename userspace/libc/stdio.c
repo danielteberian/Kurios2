@@ -193,15 +193,9 @@ ssize_t getline_fd(int fd, char *buf, size_t size) {
             return i;
         }
 
-        /* Handle backspace */
-        if (c == '\b' || c == 0x7f) {
-            if (i > 0) {
-                i--;
-                /* Echo backspace */
-                write(fd == STDIN_FILENO ? STDOUT_FILENO : fd, "\b \b", 3);
-            }
-            continue;
-        }
+        /* Note: backspace is handled by TTY line discipline in canonical mode.
+         * The TTY doesn't pass backspace to user - it removes from the buffer.
+         * So we shouldn't see '\b' or 0x7f here in canonical mode. */
 
         buf[i++] = c;
     }

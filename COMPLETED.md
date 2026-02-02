@@ -410,6 +410,16 @@
   - start_init_process() in main.c launches shell on boot
 - [2026-02-01] Verified: Shell starts and shows prompt "[/]$"
 
+### Thread Stack Bug Fix [FIXED]
+- [2026-02-01] Fixed thread stack allocation in `kernel/sched/thread.c`
+  - **Bug:** Thread stacks were allocated with `alloc_pages()` returning physical addresses
+  - **Problem:** Physical addresses were used directly as virtual addresses, but the kernel
+    uses higher-half mapping - physical memory is not identity-mapped
+  - **Symptom:** Double fault in `context_switch()` when switching to threads with invalid RSP
+  - **Fix:** Changed to use `kmalloc(DEFAULT_STACK_SIZE)` which allocates properly
+    mapped virtual memory from the kernel heap
+  - Kernel now boots and runs shell without crashes
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000
