@@ -508,6 +508,85 @@
     - `kernel/fs/ext2.c` - added ext2 symlink operations
     - `kernel/syscall/syscall.c` - implemented sys_symlink/sys_readlink
 
+### Demand Paging [IMPLEMENTED]
+- [2026-02-01] Lazy page allocation via page fault handler
+  - **Files:** `kernel/mm/fault.c`, `kernel/syscall/syscall.c`, `kernel/process/process.h`
+  - **Features:**
+    - `handle_demand_fault()` - allocates pages on first access
+    - VMA tracking for memory regions with `vma_create()`, `vma_find()`
+    - sys_mmap() creates VMAs without allocating physical pages
+    - Page fault handler checks VMA, allocates zeroed page, maps with proper permissions
+    - Anonymous and file-backed demand paging supported
+  - **Process address space integration:**
+    - Added `address_space_t *as` pointer to `process_t`
+    - Process creation initializes address space with `as_create()`
+    - Fork properly links cloned AS to child process
+
+### Copy-on-Write Fork [IMPLEMENTED]
+- [2026-02-01] Verified and completed COW fork implementation
+  - **Files:** `kernel/mm/as.c`, `kernel/mm/fault.c`, `kernel/mm/pmm.c`
+  - **Features:**
+    - `as_clone()` shares physical pages between parent and child
+    - Pages marked read-only with PTE_COW flag
+    - `handle_cow_fault()` copies page on write access
+    - `page_get_phys()`/`page_put_phys()` for reference counting
+    - TLB flush after remapping
+  - Fork no longer copies all pages immediately - much more efficient
+
+### Memory-Mapped Files [IMPLEMENTED]
+- [2026-02-01] File-backed mmap with page cache
+  - **Files:** `kernel/mm/page_cache.c`, `kernel/mm/page_cache.h`, `kernel/syscall/syscall.c`, `kernel/mm/fault.c`
+  - **Page Cache:**
+    - Hash table with 256 buckets for O(1) lookup
+    - `page_cache_get()` - lookup or read from file
+    - `page_cache_insert()` - add page to cache
+    - `page_cache_mark_dirty()` - track modified pages
+    - `page_cache_sync()` - write dirty pages back to file
+    - LRU list infrastructure for future eviction
+  - **sys_mmap() enhancements:**
+    - Supports file-backed mappings (MAP_PRIVATE, MAP_SHARED)
+    - Creates VMA with file reference and offset
+    - No immediate allocation - pages faulted in on demand
+  - **handle_demand_fault() file support:**
+    - Checks VMA for file backing
+    - Uses page cache for file pages
+    - MAP_PRIVATE uses COW (private copy on write)
+    - MAP_SHARED maps page directly (writes go to file)
+  - **msync() syscall:**
+    - Syncs dirty pages in range back to disk
+    - MS_SYNC, MS_ASYNC, MS_INVALIDATE flags
+
+### Async Block I/O [IMPLEMENTED]
+- [2026-02-01] Interrupt-driven async block device I/O
+  - **Files:** `kernel/drivers/block.c`, `kernel/drivers/block.h`, `kernel/drivers/virtio/virtio_blk.c`
+  - **Block layer enhancements:**
+    - Added `block_callback_t` for completion callbacks
+    - `block_request_t` extended with callback, callback_ctx, driver_private
+    - `block_device_t` extended with async_capable, queue_lock, in_flight
+    - `block_submit_async()` - submit request with callback
+    - `block_complete()` - call from IRQ handler when request done
+    - Queue locking with spinlocks
+  - **Virtio-blk IRQ handler:**
+    - `virtio_blk_irq_handler()` processes completed requests
+    - Reads virtqueue, invokes callbacks
+    - Registered via `idt_register_handler()` on device IRQ
+    - Device marked `async_capable = true`
+
+### I/O Scheduler [IMPLEMENTED]
+- [2026-02-01] NOOP I/O scheduler with request merging
+  - **Files:** `kernel/drivers/io_sched.c`, `kernel/drivers/io_sched.h`
+  - **Scheduler interface:**
+    - `io_scheduler_ops_t` - init, exit, add_request, dispatch, merge, completed
+    - `io_scheduler_t` - queue, stats, ops pointer
+    - `io_sched_create()` - create scheduler for device
+    - `io_sched_add_request()` - add request (tries merge first)
+    - `io_sched_dispatch()` - get next request to process
+  - **NOOP scheduler:**
+    - FIFO ordering
+    - `noop_merge()` - merges adjacent sector requests (same type)
+    - Statistics: requests_added, requests_dispatched, requests_merged
+  - Integrated into kernel init via `io_sched_init()` in main.c
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

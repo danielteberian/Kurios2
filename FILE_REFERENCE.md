@@ -2,7 +2,7 @@
 
 > **Purpose**: Complete reference of every file in the project. Update this file whenever adding, removing, or significantly changing files.
 >
-> **Last Updated**: 2026-02-01
+> **Last Updated**: 2026-02-02
 
 ---
 
@@ -162,8 +162,10 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 | `as.h` | Address space structures and interface |
 | `vma.c` | Virtual Memory Areas. Tracks memory regions with start/end/flags. Used for demand paging and COW infrastructure |
 | `vma.h` | VMA structures: `vma_t`, `vma_create()`, `vma_find()`, `vma_list()` |
-| `fault.c` | Page fault handler (INT 14). Infrastructure for demand paging and COW (not fully implemented yet) |
+| `fault.c` | Page fault handler (INT 14). Demand paging, COW fault handling, file-backed page faults |
 | `fault.h` | Fault handler interface |
+| `page_cache.c` | Page cache for file-backed memory mappings. Hash table lookup, LRU list, dirty page tracking, sync to disk |
+| `page_cache.h` | Page cache interface: `page_cache_get()`, `page_cache_insert()`, `page_cache_sync()`, `page_cache_mark_dirty()` |
 | `uaccess.c` | User-space memory access: `copy_to_user()`, `copy_from_user()`, `strncpy_from_user()` |
 | `uaccess.h` | User access declarations |
 
@@ -209,8 +211,12 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 | `termios.h` | Terminal I/O structures: `struct termios`, `c_iflag`, `c_oflag`, `c_cflag`, `c_lflag`, `c_cc` |
 | `pci.c` | PCI bus enumeration. Config space read/write, device discovery, BAR access |
 | `pci.h` | PCI structures: `pci_device_t`, class codes, config offsets |
-| `block.c` | Block device abstraction. `block_device_t`, sector read/write, device registration |
-| `block.h` | Block device interface and structures |
+| `block.c` | Block device abstraction. `block_device_t`, sector read/write, device registration, async I/O with callbacks |
+| `block.h` | Block device interface, async request structures, callback types |
+| `io_sched.c` | I/O scheduler. NOOP scheduler with FIFO ordering and adjacent sector request merging |
+| `io_sched.h` | I/O scheduler interface: `io_scheduler_t`, `io_sched_create()`, `io_sched_add_request()`, `io_sched_dispatch()` |
+| `rtc.c` | CMOS Real-Time Clock driver. Reads date/time, converts to Unix timestamp |
+| `rtc.h` | RTC interface: `rtc_get_unix_time()`, `rtc_get_boot_time()`, `rtc_read_time()` |
 
 ### kernel/drivers/virtio/ - Virtio Drivers
 
@@ -445,11 +451,11 @@ When adding new files:
 
 ## File Statistics
 
-- **Total source files**: ~110
-- **Kernel C files**: ~55
+- **Total source files**: ~115
+- **Kernel C files**: ~60
 - **Kernel ASM files**: 7
 - **User-space C files**: 5
 - **User-space ASM files**: 1
-- **Header files**: ~50
-- **Kernel size**: ~170KB
+- **Header files**: ~55
+- **Kernel size**: ~186KB
 - **Shell size**: ~12KB

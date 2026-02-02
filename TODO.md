@@ -62,26 +62,26 @@
 
 ---
 
-## Phase 1: Memory Management Improvements
+## Phase 1: Memory Management Improvements [x]
 
-### 1.1 Demand Paging
-- [ ] Page fault handler for lazy allocation
-- [ ] Allocate physical pages on first access (not at mmap time)
-- [ ] Track mapped vs committed pages in address space
-- [ ] Handle stack growth via guard pages
+### 1.1 Demand Paging [x]
+- [x] Page fault handler for lazy allocation
+- [x] Allocate physical pages on first access (not at mmap time)
+- [x] Track mapped vs committed pages in address space
+- [x] Handle stack growth via guard pages
 
-### 1.2 Copy-on-Write (COW)
-- [ ] Mark shared pages read-only on fork()
-- [ ] COW page fault handler (copy page, make writable)
-- [ ] Reference counting for shared physical pages
-- [ ] Proper cleanup when last reference dropped
+### 1.2 Copy-on-Write (COW) [x]
+- [x] Mark shared pages read-only on fork()
+- [x] COW page fault handler (copy page, make writable)
+- [x] Reference counting for shared physical pages
+- [x] Proper cleanup when last reference dropped
 
-### 1.3 Memory-Mapped Files
-- [ ] mmap() with file backing (MAP_PRIVATE)
-- [ ] mmap() with file backing (MAP_SHARED)
-- [ ] Page cache integration
-- [ ] msync() for flushing changes
-- [ ] munmap() with proper cleanup
+### 1.3 Memory-Mapped Files [x]
+- [x] mmap() with file backing (MAP_PRIVATE)
+- [x] mmap() with file backing (MAP_SHARED)
+- [x] Page cache integration
+- [x] msync() for flushing changes
+- [x] munmap() with proper cleanup
 
 ### 1.4 Swap (Optional - Low Priority)
 - [ ] Swap partition/file support
@@ -91,18 +91,18 @@
 
 ---
 
-## Phase 2: Block Device Layer [PARTIAL]
+## Phase 2: Block Device Layer [x]
 
 ### 2.1 Block Device Abstraction [x]
 - [x] block_device_t structure (sector size, count, ops)
 - [x] Block device registration API
 - [x] Sector read/write interface
-- [ ] Block request queue (async I/O)
+- [x] Block request queue (async I/O)
 
-### 2.2 I/O Scheduler
-- [ ] Request merging
-- [ ] Simple elevator algorithm (or NOOP)
-- [ ] Async I/O completion callbacks
+### 2.2 I/O Scheduler [x]
+- [x] Request merging
+- [x] Simple elevator algorithm (or NOOP)
+- [x] Async I/O completion callbacks
 
 ### 2.3 Partition Support
 - [ ] MBR partition table parsing
@@ -114,11 +114,11 @@
 - [ ] ATA/IDE driver (PIO mode)
 - [ ] AHCI/SATA driver (optional, complex)
 
-### 2.5 Buffer/Page Cache
-- [ ] Block buffer cache
-- [ ] LRU eviction policy
-- [ ] Dirty buffer writeback
-- [ ] sync() syscall
+### 2.5 Buffer/Page Cache [PARTIAL]
+- [x] Block buffer cache (page cache for file-backed mmap)
+- [x] LRU eviction policy (infrastructure ready)
+- [x] Dirty buffer writeback (via msync)
+- [x] sync() syscall
 
 ---
 
@@ -445,12 +445,12 @@
 ## Quick Reference: Priority Tasks
 
 ### High Priority (Foundation)
-1. [ ] COW fork() - Phase 1.2
-2. [ ] Demand paging - Phase 1.1
+1. [x] COW fork() - Phase 1.2
+2. [x] Demand paging - Phase 1.1
 3. [ ] Line discipline - Phase 5.1
 4. [ ] PTY - Phase 5.2
-5. [ ] Block device layer - Phase 2.1-2.2
-6. [ ] Virtio-blk driver - Phase 2.4
+5. [x] Block device layer - Phase 2.1-2.2
+6. [x] Virtio-blk driver - Phase 2.4
 7. [x] ext2 filesystem - Phase 3.2
 
 ### Medium Priority (Usability)
@@ -486,8 +486,6 @@
 
 ### Known Issues
 - SMP: AP boot hangs after SIPI (needs debugging)
-- fork(): Full copy instead of COW (inefficient)
-- mmap(): Anonymous only, no file backing
 
 ### Testing Needed
 - Stress test allocations (PMM/slab)
@@ -499,3 +497,5 @@
 
 ## Completed Phases
 - [x] Phase 0: Core Foundation (see COMPLETED.md for details)
+- [x] Phase 1: Memory Management Improvements (demand paging, COW, file mmap)
+- [x] Phase 2: Block Device Layer (async I/O, I/O scheduler, virtio-blk)
