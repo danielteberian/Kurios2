@@ -69,10 +69,14 @@ typedef struct virtio_blk_request {
     virtio_blk_req_header_t header;
     uint8_t status;
     volatile bool complete;
+    block_request_t *blk_req;       /* Linked block request (for async) */
 } virtio_blk_request_t;
 
 /* Device index counter */
 static int virtio_blk_index = 0;
+
+/* Global device pointer for IRQ handler (TODO: use proper device lookup) */
+static virtio_blk_dev_t *g_vblk_dev = NULL;
 
 /*
  * Synchronous read/write helper
@@ -199,10 +203,12 @@ static block_ops_t virtio_blk_ops = {
 
 /*
  * Virtio block interrupt handler
- * Note: Currently unused as driver uses polling mode
+ * Called when virtio device signals completion
  */
-static void __attribute__((unused)) virtio_blk_irq_handler(void *ctx) {
-    virtio_blk_dev_t *vblk = ctx;
+static void virtio_blk_irq_handler(void *state) {
+    (void)state;
+
+    virtio_blk_dev_t *vblk = g_vblk_dev;
     if (!vblk || !vblk->vdev) return;
 
     /* Read and clear ISR */
@@ -216,8 +222,14 @@ static void __attribute__((unused)) virtio_blk_irq_handler(void *ctx) {
         uint32_t len;
         void *cookie = virtqueue_get(vblk->vq, &len);
         if (cookie) {
-            virtio_blk_request_t *req = cookie;
-            req->complete = true;
+            virtio_blk_request_t *vreq = cookie;
+            vreq->complete = true;
+
+            /* If this is an async request, complete it */
+            if (vreq->blk_req) {
+                vreq->blk_req->status = (vreq->status == VIRTIO_BLK_S_OK) ? 0 : -5;
+                block_complete(&vblk->blk_dev, vreq->blk_req);
+            }
         }
     }
 }
@@ -275,11 +287,17 @@ void virtio_blk_probe(virtio_device_t *vdev) {
     uint8_t status = virtio_get_status(vdev);
     virtio_set_status(vdev, status | VIRTIO_STATUS_DRIVER_OK);
 
+    /* Save global pointer for IRQ handler (TODO: use proper lookup) */
+    g_vblk_dev = vblk;
+
     /* Register IRQ handler if available */
+    bool async_enabled = false;
     if (vdev->irq > 0 && vdev->irq < 16) {
-        /* Register with IRQ offset for PIC */
-        DEBUG("virtio-blk: registering IRQ %d", vdev->irq);
-        /* Note: Would need proper IRQ registration here */
+        /* IRQ number is 0-15 for legacy PIC, need to add IRQ_BASE (32) */
+        uint8_t vector = 32 + vdev->irq;
+        idt_register_handler(vector, virtio_blk_irq_handler);
+        DEBUG("virtio-blk: registered IRQ %d (vector %d)", vdev->irq, vector);
+        async_enabled = true;
     }
 
     /* Set up block device */
@@ -298,6 +316,7 @@ void virtio_blk_probe(virtio_device_t *vdev) {
     vblk->blk_dev.capacity = vblk->capacity * vblk->blk_size;
     vblk->blk_dev.read_only = vblk->read_only;
     vblk->blk_dev.removable = false;
+    vblk->blk_dev.async_capable = async_enabled;
     vblk->blk_dev.ops = &virtio_blk_ops;
     vblk->blk_dev.private = vblk;
 

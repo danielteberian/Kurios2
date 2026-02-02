@@ -8,6 +8,7 @@
 #include "../mm/uaccess.h"
 #include "../mm/vmm.h"
 #include "../mm/pmm.h"
+#include "../mm/page_cache.h"
 #include "../process/process.h"
 #include "../sched/sched.h"
 #include "../sched/thread.h"
@@ -1357,65 +1358,147 @@ static int64_t sys_brk(uint64_t brk, uint64_t arg2, uint64_t arg3,
 }
 
 /*
- * sys_mmap - map memory
- * Simplified implementation - only supports anonymous mappings
+ * sys_mmap - map memory (demand paging)
+ *
+ * Creates a VMA for the mapping but does NOT allocate physical pages.
+ * Pages are allocated on first access by the page fault handler.
+ * Supports both anonymous and file-backed mappings.
  */
 static int64_t sys_mmap(uint64_t addr, uint64_t length, uint64_t prot,
                         uint64_t flags, uint64_t fd, uint64_t offset) {
-    (void)offset;
-
-    DEBUG("sys_mmap(addr=0x%llx, len=%llu, prot=0x%llx, flags=0x%llx, fd=%llu)",
-          addr, length, prot, flags, fd);
+    DEBUG("sys_mmap(addr=0x%llx, len=%llu, prot=0x%llx, flags=0x%llx, fd=%llu, off=%llu)",
+          addr, length, prot, flags, fd, offset);
 
     if (length == 0) {
         return -EINVAL;
     }
 
-    /* Only support anonymous mappings for now */
-    if (!(flags & MAP_ANONYMOUS)) {
-        if (fd != (uint64_t)-1) {
-            return -ENOSYS;  /* File-backed mappings not implemented */
-        }
-    }
-
-    /* Round length up to page size */
-    length = (length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    uint64_t num_pages = length / PAGE_SIZE;
-
-    /* Choose address if not specified */
-    static uint64_t mmap_hint = 0x40000000;
-    uint64_t map_addr;
-
-    if (addr && (flags & MAP_FIXED)) {
-        map_addr = addr & ~(PAGE_SIZE - 1);
-    } else if (addr) {
-        map_addr = addr & ~(PAGE_SIZE - 1);
-    } else {
-        map_addr = mmap_hint;
-        mmap_hint += length + PAGE_SIZE;
-    }
-
-    /* Convert protection flags */
-    uint64_t pte_flags = PTE_USER;
-    if (prot & PROT_WRITE) pte_flags |= PTE_WRITABLE;
-    if (!(prot & PROT_EXEC)) pte_flags |= PTE_NX;
-
-    /* Allocate pages */
     process_t *proc = process_current();
     if (!proc) {
         return -ESRCH;
     }
 
-    address_space_t as;
-    as.cr3 = proc->cr3 ? proc->cr3 : as_get_kernel()->cr3;
-    as.ref_count = 1;
-    as.user_pages = 0;
-
-    int ret = as_alloc_pages(&as, map_addr, num_pages, pte_flags);
-    if (ret < 0) {
-        return ret;
+    /* Handle file-backed mappings */
+    vfs_node_t *file_node = NULL;
+    if (!(flags & MAP_ANONYMOUS) && fd != (uint64_t)-1) {
+        file_t *file = fd_table_get(proc->fd_table, (int)fd);
+        if (!file || !file->node) {
+            return -EBADF;
+        }
+        /* Only regular files can be mmap'd */
+        if (file->node->type != VFS_FILE) {
+            return -ENODEV;
+        }
+        file_node = file->node;
+        /* Reference the node for the VMA */
+        vfs_node_ref(file_node);
     }
 
+    /* Round length up to page size */
+    length = (length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+    /* Need address space for demand paging */
+    if (!proc->as || !proc->as->vmas) {
+        /* Fallback to eager allocation if no VMA support */
+        DEBUG("sys_mmap: no VMA support, using eager allocation");
+
+        if (file_node) {
+            vfs_node_unref(file_node);  /* Can't do file mmap without VMA */
+            return -ENOSYS;
+        }
+
+        static uint64_t mmap_hint_eager = 0x40000000;
+        uint64_t map_addr;
+        uint64_t num_pages = length / PAGE_SIZE;
+
+        if (addr && (flags & MAP_FIXED)) {
+            map_addr = addr & ~(PAGE_SIZE - 1);
+        } else if (addr) {
+            map_addr = addr & ~(PAGE_SIZE - 1);
+        } else {
+            map_addr = mmap_hint_eager;
+            mmap_hint_eager += length + PAGE_SIZE;
+        }
+
+        uint64_t pte_flags = PTE_USER;
+        if (prot & PROT_WRITE) pte_flags |= PTE_WRITABLE;
+        if (!(prot & PROT_EXEC)) pte_flags |= PTE_NX;
+
+        address_space_t as;
+        as.cr3 = proc->cr3 ? proc->cr3 : as_get_kernel()->cr3;
+        as.ref_count = 1;
+        as.user_pages = 0;
+        as.vmas = NULL;
+
+        int ret = as_alloc_pages(&as, map_addr, num_pages, pte_flags);
+        if (ret < 0) {
+            return ret;
+        }
+        return (int64_t)map_addr;
+    }
+
+    /* Demand paging path: create VMA without allocating pages */
+    uint64_t map_addr;
+
+    if (addr && (flags & MAP_FIXED)) {
+        map_addr = addr & ~(PAGE_SIZE - 1);
+        /* For MAP_FIXED, check for overlaps and remove existing VMAs */
+        if (vma_overlaps(proc->as->vmas, map_addr, map_addr + length)) {
+            /* TODO: unmap overlapping regions */
+            DEBUG("sys_mmap: MAP_FIXED overlaps existing VMA");
+        }
+    } else if (addr) {
+        /* Try requested address first */
+        map_addr = addr & ~(PAGE_SIZE - 1);
+        if (vma_overlaps(proc->as->vmas, map_addr, map_addr + length)) {
+            /* Find free region instead */
+            map_addr = vma_find_free(proc->as->vmas, length, map_addr);
+            if (map_addr == 0) {
+                return -ENOMEM;
+            }
+        }
+    } else {
+        /* Find any free region */
+        map_addr = vma_find_free(proc->as->vmas, length, 0);
+        if (map_addr == 0) {
+            return -ENOMEM;
+        }
+    }
+
+    /* Build VMA flags from mmap flags */
+    uint32_t vma_flags = 0;
+    if (file_node) {
+        /* File-backed mapping */
+    } else {
+        vma_flags |= VMA_ANONYMOUS;
+    }
+    if (prot & PROT_READ)  vma_flags |= VMA_READ;
+    if (prot & PROT_WRITE) vma_flags |= VMA_WRITE;
+    if (prot & PROT_EXEC)  vma_flags |= VMA_EXEC;
+    if (flags & MAP_SHARED) vma_flags |= VMA_SHARED;
+    if (flags & MAP_FIXED) vma_flags |= VMA_FIXED;
+
+    /* Build PTE flags for when pages are faulted in */
+    uint32_t pte_prot = PTE_USER | PTE_PRESENT;
+    if (prot & PROT_WRITE) pte_prot |= PTE_WRITABLE;
+    if (!(prot & PROT_EXEC)) pte_prot |= PTE_NX;
+
+    /* Create the VMA - no physical pages allocated yet */
+    vma_t *vma = vma_create(proc->as->vmas, map_addr, map_addr + length,
+                            vma_flags, pte_prot);
+    if (!vma) {
+        ERROR("sys_mmap: failed to create VMA");
+        if (file_node) vfs_node_unref(file_node);
+        return -ENOMEM;
+    }
+
+    /* Set file backing if this is a file mapping */
+    if (file_node) {
+        vma->file = file_node;
+        vma->file_offset = offset;
+    }
+
+    DEBUG("sys_mmap: created VMA 0x%llx-0x%llx (lazy)", map_addr, map_addr + length);
     return (int64_t)map_addr;
 }
 
@@ -1436,9 +1519,29 @@ static int64_t sys_munmap(uint64_t addr, uint64_t length, uint64_t arg3,
     length = (length + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     uint64_t num_pages = length / PAGE_SIZE;
 
-    /* Unmap pages */
+    process_t *proc = process_current();
+
+    /* Unmap physical pages if they exist */
     for (uint64_t i = 0; i < num_pages; i++) {
-        vmm_unmap_page(addr + i * PAGE_SIZE);
+        uint64_t page_addr = addr + i * PAGE_SIZE;
+        /* Use as_free_page if we have an address space, otherwise vmm */
+        if (proc && proc->as) {
+            as_free_page(proc->as, page_addr);
+        } else {
+            vmm_unmap_page(page_addr);
+        }
+    }
+
+    /* Remove VMA if we have one */
+    if (proc && proc->as && proc->as->vmas) {
+        vma_t *vma = vma_find(proc->as->vmas, addr);
+        if (vma) {
+            /* For simplicity, remove the entire VMA if it matches */
+            /* TODO: handle partial unmaps by splitting VMAs */
+            if (vma->start == addr && vma->end == addr + length) {
+                vma_destroy(proc->as->vmas, vma);
+            }
+        }
     }
 
     return 0;
@@ -1461,6 +1564,47 @@ static int64_t sys_mprotect(uint64_t addr, uint64_t length, uint64_t prot,
     /* For now, just validate the request - full implementation would
      * modify PTEs to change protection */
     (void)prot;
+
+    return 0;
+}
+
+/*
+ * sys_msync - synchronize a file mapping
+ */
+static int64_t sys_msync(uint64_t addr, uint64_t length, uint64_t flags,
+                         uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    if (addr & (PAGE_SIZE - 1)) {
+        return -EINVAL;
+    }
+    if (length == 0) {
+        return 0;
+    }
+
+    process_t *proc = process_current();
+    if (!proc || !proc->as || !proc->as->vmas) {
+        return -ENOMEM;
+    }
+
+    /* Find VMA for this address */
+    vma_t *vma = vma_find(proc->as->vmas, addr);
+    if (!vma) {
+        return -ENOMEM;
+    }
+
+    /* Only file-backed VMAs can be synced */
+    vfs_node_t *file = (vfs_node_t *)vma->file;
+    if (!file) {
+        return 0;  /* Anonymous mapping - nothing to sync */
+    }
+
+    /* MS_SYNC = synchronous, MS_ASYNC = schedule write */
+    /* For now we just do synchronous writes */
+    (void)flags;
+
+    /* Sync pages in this range through page cache */
+    page_cache_sync(file);
 
     return 0;
 }
@@ -2225,14 +2369,20 @@ static int64_t sys_fork_impl(syscall_frame_t *frame) {
 
     /*
      * Step 2: Clone parent's address space
-     * We need the parent's address space, not the kernel's
+     * Use parent->as if available, otherwise create a temporary one
      */
-    address_space_t parent_as;
-    parent_as.cr3 = parent->cr3;
-    parent_as.ref_count = 1;
-    parent_as.user_pages = 0;  /* Will be counted by clone */
+    address_space_t *parent_as = parent->as;
+    address_space_t temp_as;
+    if (!parent_as) {
+        /* Fallback for processes without as struct */
+        temp_as.cr3 = parent->cr3;
+        temp_as.ref_count = 1;
+        temp_as.user_pages = 0;
+        temp_as.vmas = NULL;
+        parent_as = &temp_as;
+    }
 
-    address_space_t *child_as = as_clone(&parent_as);
+    address_space_t *child_as = as_clone(parent_as);
     if (!child_as) {
         ERROR("sys_fork: failed to clone address space");
         process_exit(child, -1);
@@ -2240,7 +2390,13 @@ static int64_t sys_fork_impl(syscall_frame_t *frame) {
         return -ENOMEM;
     }
 
-    /* Update child's page table */
+    /* Destroy the address space that process_create made */
+    if (child->as) {
+        as_destroy(child->as);
+    }
+
+    /* Link cloned address space to child */
+    child->as = child_as;
     child->cr3 = child_as->cr3;
 
     /*
@@ -2637,6 +2793,7 @@ void syscall_init(void) {
     syscall_register(SYS_MMAP, sys_mmap);
     syscall_register(SYS_MPROTECT, sys_mprotect);
     syscall_register(SYS_MUNMAP, sys_munmap);
+    syscall_register(SYS_MSYNC, sys_msync);
     syscall_register(SYS_BRK, sys_brk);
     syscall_register(SYS_SIGACTION, sys_sigaction);
     syscall_register(SYS_SIGPROCMASK, sys_sigprocmask);

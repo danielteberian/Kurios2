@@ -21,6 +21,7 @@
 #define SYS_MMAP        9
 #define SYS_MPROTECT    10
 #define SYS_MUNMAP      11
+#define SYS_MSYNC       26
 #define SYS_BRK         12
 #define SYS_SIGACTION   13
 #define SYS_SIGPROCMASK 14
@@ -119,6 +120,11 @@
 #define MAP_FIXED       0x10
 #define MAP_ANONYMOUS   0x20
 #define MAP_FAILED      ((void *)-1)
+
+/* msync flags */
+#define MS_ASYNC        1       /* Sync memory asynchronously */
+#define MS_SYNC         4       /* Synchronous memory sync */
+#define MS_INVALIDATE   2       /* Invalidate cached data */
 
 /* fcntl commands */
 #define F_DUPFD         0       /* Duplicate fd */

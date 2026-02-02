@@ -9,6 +9,7 @@
 #include "mm/as.h"
 #include "mm/vma.h"
 #include "mm/fault.h"
+#include "mm/page_cache.h"
 
 #ifdef TEST_MODE
 #include "tests/tests.h"
@@ -42,6 +43,7 @@
 #include "drivers/rtc.h"
 #include "drivers/pci.h"
 #include "drivers/block.h"
+#include "drivers/io_sched.h"
 #include "drivers/virtio/virtio.h"
 #include "initrd/initrd.h"
 #include "smp/percpu.h"
@@ -519,6 +521,9 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize VMA subsystem (for demand paging) */
     vma_init();
 
+    /* Initialize page cache (for file-backed mmap) */
+    page_cache_init();
+
     /* Initialize ACPI table parsing */
     if (acpi_init(boot_info) != 0) {
         WARN("ACPI initialization failed - APIC info not available");
@@ -705,6 +710,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize block device layer */
     block_init();
+
+    /* Initialize I/O scheduler */
+    io_sched_init();
 
     /* Initialize virtio devices (scans PCI for virtio-blk, etc.) */
     virtio_init();

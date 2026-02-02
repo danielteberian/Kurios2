@@ -8,6 +8,7 @@
 
 /* Forward declarations */
 struct fd_table;
+struct address_space;
 
 /* Forward declaration for signal state */
 typedef struct signal_state signal_state_t;
@@ -49,6 +50,7 @@ typedef struct process {
 
     /* Address space */
     uint64_t cr3;                   /* Page table root (physical address) */
+    struct address_space *as;       /* Full address space (with VMAs) */
 
     /* Kernel stack for this process (used during syscalls/interrupts) */
     void *kernel_stack;             /* Base of kernel stack allocation */

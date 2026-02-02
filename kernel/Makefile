@@ -24,6 +24,7 @@ C_SOURCES := \
     mm/uaccess.c \
     mm/vma.c \
     mm/fault.c \
+    mm/page_cache.c \
     fs/vfs.c \
     fs/ramfs.c \
     fs/fd_table.c \
@@ -38,6 +39,7 @@ C_SOURCES := \
     drivers/mouse.c \
     drivers/pci.c \
     drivers/block.c \
+    drivers/io_sched.c \
     drivers/pty.c \
     drivers/rtc.c \
     drivers/virtio/virtio.c \

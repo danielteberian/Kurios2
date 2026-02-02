@@ -5,9 +5,11 @@
 #include "vmm.h"
 #include "as.h"
 #include "vma.h"
+#include "page_cache.h"
 #include "debug/debug.h"
 #include "../process/process.h"
 #include "../arch/x86_64/cpu.h"
+#include "../lib/string.h"
 
 /*
  * Convert physical address to virtual for page access
@@ -116,6 +118,10 @@ int handle_cow_fault(uint64_t fault_addr) {
 
 /*
  * Handle a demand page fault
+ *
+ * Called when a user process accesses an address that is in a valid VMA
+ * but has no physical page mapped yet. Allocates a page and maps it.
+ * For file-backed VMAs, reads data from the page cache.
  */
 int handle_demand_fault(uint64_t fault_addr) {
     process_t *proc = process_current();
@@ -124,12 +130,99 @@ int handle_demand_fault(uint64_t fault_addr) {
         return -1;
     }
 
-    /* TODO: integrate with process to get VMA list */
-    /* For now, if we don't have VMA tracking, just fail */
-    (void)proc;  /* Suppress unused warning until VMA integration */
+    /* Check if process has VMA tracking */
+    if (!proc->as || !proc->as->vmas) {
+        DEBUG("Demand fault: no VMA tracking for process %u", proc->pid);
+        return -1;
+    }
 
-    ERROR("Demand paging: page 0x%llx not in any VMA (not yet fully implemented)", fault_addr);
-    return -1;
+    /* Find VMA containing the faulting address */
+    vma_t *vma = vma_find(proc->as->vmas, fault_addr);
+    if (!vma) {
+        DEBUG("Demand fault: address 0x%llx not in any VMA", fault_addr);
+        return -1;  /* Invalid access - not in any VMA */
+    }
+
+    /* Check if this VMA is readable (basic permission check) */
+    if (!(vma->flags & VMA_READ)) {
+        DEBUG("Demand fault: VMA at 0x%llx is not readable", fault_addr);
+        return -1;
+    }
+
+    uint64_t page_addr = fault_addr & ~0xFFFUL;
+    uint64_t phys;
+
+    /* Check if this is a file-backed mapping */
+    vfs_node_t *file = (vfs_node_t *)vma->file;
+    if (file && !(vma->flags & VMA_ANONYMOUS)) {
+        /* File-backed: get page from page cache */
+        uint64_t file_offset = vma->file_offset + (page_addr - vma->start);
+
+        phys = page_cache_get(file, file_offset);
+        if (!phys) {
+            ERROR("Demand fault: failed to get page from cache for 0x%llx", page_addr);
+            return -1;
+        }
+
+        DEBUG("Demand paging (file): page 0x%llx from file offset 0x%llx",
+              page_addr, file_offset);
+
+        /* For MAP_PRIVATE file mappings, we need to use COW */
+        if (!(vma->flags & VMA_SHARED) && (vma->flags & VMA_WRITE)) {
+            /* MAP_PRIVATE + writable: set up COW so writes get a private copy */
+            uint64_t pte_flags = PTE_PRESENT | PTE_USER | PTE_COW;
+            if (!(vma->flags & VMA_EXEC)) pte_flags |= PTE_NX;
+
+            if (as_map_page(proc->as, page_addr, phys, pte_flags) != 0) {
+                ERROR("Demand fault: failed to map COW page at 0x%llx", page_addr);
+                page_cache_put(file, file_offset);
+                return -1;
+            }
+        } else {
+            /* MAP_SHARED or read-only: map directly */
+            uint64_t pte_flags = PTE_PRESENT | PTE_USER;
+            if ((vma->flags & VMA_WRITE) && (vma->flags & VMA_SHARED)) {
+                pte_flags |= PTE_WRITABLE;
+            }
+            if (!(vma->flags & VMA_EXEC)) pte_flags |= PTE_NX;
+
+            if (as_map_page(proc->as, page_addr, phys, pte_flags) != 0) {
+                ERROR("Demand fault: failed to map page at 0x%llx", page_addr);
+                page_cache_put(file, file_offset);
+                return -1;
+            }
+        }
+    } else {
+        /* Anonymous mapping: allocate a new zeroed page */
+        phys = alloc_page();
+        if (!phys) {
+            ERROR("Demand fault: failed to allocate page for 0x%llx", page_addr);
+            return -1;
+        }
+
+        /* Zero the page */
+        void *page_data = phys_to_virt(phys);
+        memset(page_data, 0, PAGE_SIZE);
+
+        /* Build PTE flags from VMA */
+        uint64_t pte_flags = PTE_PRESENT | PTE_USER;
+        if (vma->flags & VMA_WRITE) pte_flags |= PTE_WRITABLE;
+        if (!(vma->flags & VMA_EXEC)) pte_flags |= PTE_NX;
+
+        /* Map the page in the process's address space */
+        if (as_map_page(proc->as, page_addr, phys, pte_flags) != 0) {
+            ERROR("Demand fault: failed to map page at 0x%llx", page_addr);
+            free_page(phys);
+            return -1;
+        }
+    }
+
+    proc->as->user_pages++;
+
+    DEBUG("Demand paging: mapped page at 0x%llx -> 0x%llx (VMA 0x%llx-0x%llx)",
+          page_addr, phys, vma->start, vma->end);
+
+    return 0;
 }
 
 /*
@@ -165,10 +258,12 @@ void page_fault_handler(cpu_state_t *state) {
 
     /* Check for demand paging: not present + user + in valid VMA */
     if (!is_present && is_user) {
-        /* TODO: Check VMA and handle demand fault */
-        /* For now, we'll implement basic stack growth */
+        /* First, try demand paging via VMA */
+        if (handle_demand_fault(fault_addr) == 0) {
+            return;  /* Demand fault handled successfully */
+        }
 
-        /* Check if this might be stack growth (address near stack) */
+        /* Demand paging didn't handle it - try stack growth as fallback */
         process_t *proc = process_current();
         if (proc) {
             uint64_t stack_top = USER_STACK_TOP;

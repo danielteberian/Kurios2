@@ -13,6 +13,7 @@
 #include "../fs/fd_table.h"
 #include "../fs/vfs.h"
 #include "../signal/signal.h"
+#include "../mm/as.h"
 
 /* Kernel stack size: 16KB (4 pages) - same as thread stacks */
 #define KERNEL_STACK_SIZE   (16 * 1024)
@@ -257,6 +258,10 @@ process_t *process_create(const char *name) {
     strncpy(proc->cwd, "/", sizeof(proc->cwd));  /* Default to root */
     proc->umask = 022;  /* Default umask: rw-r--r-- for files, rwxr-xr-x for dirs */
     proc->alarm_ticks = 0;  /* No alarm pending */
+    proc->as = as_create();  /* Create address space with VMA tracking */
+    if (proc->as) {
+        proc->cr3 = proc->as->cr3;  /* Sync cr3 with address space */
+    }
     copy_process_name(proc, name);
 
     /* Add to process table */
@@ -307,7 +312,11 @@ void process_destroy(process_t *proc) {
         proc->signals = NULL;
     }
 
-    /* TODO: Free user address space when implemented */
+    /* Free user address space */
+    if (proc->as) {
+        as_destroy(proc->as);
+        proc->as = NULL;
+    }
 
     /* Remove from process table */
     process_table[pid] = NULL;

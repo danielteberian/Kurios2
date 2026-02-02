@@ -4,6 +4,7 @@
 #include "../debug/debug.h"
 #include "../mm/slab.h"
 #include "../lib/string.h"
+#include "../sync/spinlock.h"
 
 /* List of registered block devices */
 static block_device_t *block_devices = NULL;
@@ -278,4 +279,131 @@ void block_list_devices(void) {
         kprintf("  (no devices)\n");
     }
     kprintf("\n");
+}
+
+/*
+ * Lock a block device's queue
+ */
+static inline uint64_t block_queue_lock(block_device_t *dev) {
+    spinlock_t *lock = (spinlock_t *)&dev->queue_lock;
+    return spin_lock_irqsave(lock);
+}
+
+/*
+ * Unlock a block device's queue
+ */
+static inline void block_queue_unlock(block_device_t *dev, uint64_t flags) {
+    spinlock_t *lock = (spinlock_t *)&dev->queue_lock;
+    spin_unlock_irqrestore(lock, flags);
+}
+
+/*
+ * Add request to queue (must hold lock)
+ */
+static void block_queue_add_locked(block_device_t *dev, block_request_t *req) {
+    req->next = NULL;
+
+    if (dev->queue_tail) {
+        dev->queue_tail->next = req;
+        dev->queue_tail = req;
+    } else {
+        dev->queue_head = req;
+        dev->queue_tail = req;
+    }
+}
+
+/*
+ * Remove request from queue head (must hold lock)
+ * Note: Currently unused but will be used by I/O scheduler
+ */
+__attribute__((unused))
+static block_request_t *block_queue_pop_locked(block_device_t *dev) {
+    block_request_t *req = dev->queue_head;
+    if (req) {
+        dev->queue_head = req->next;
+        if (!dev->queue_head) {
+            dev->queue_tail = NULL;
+        }
+        req->next = NULL;
+    }
+    return req;
+}
+
+/*
+ * Submit an async block request with callback
+ */
+int block_submit_async(block_device_t *dev, block_request_t *req,
+                       block_callback_t callback, void *ctx) {
+    if (!dev || !req) {
+        return -22;  /* EINVAL */
+    }
+
+    req->callback = callback;
+    req->callback_ctx = ctx;
+    req->complete = false;
+    req->status = 0;
+
+    /* Add to queue */
+    uint64_t flags = block_queue_lock(dev);
+    block_queue_add_locked(dev, req);
+    dev->in_flight++;
+    block_queue_unlock(dev, flags);
+
+    /* Use driver's submit if available */
+    if (dev->ops && dev->ops->submit) {
+        return dev->ops->submit(dev, req);
+    }
+
+    /* Otherwise, do synchronous I/O (fallback) */
+    int result;
+    switch (req->type) {
+        case BLOCK_READ:
+            result = block_read(dev, req->sector, req->count, req->buffer);
+            break;
+        case BLOCK_WRITE:
+            result = block_write(dev, req->sector, req->count, req->buffer);
+            break;
+        case BLOCK_FLUSH:
+            result = block_flush(dev);
+            break;
+        default:
+            result = -22;
+    }
+
+    /* Complete the request */
+    req->status = result;
+    req->complete = true;
+
+    /* Call callback if provided */
+    if (req->callback) {
+        req->callback(req, req->callback_ctx);
+    }
+
+    flags = block_queue_lock(dev);
+    dev->in_flight--;
+    block_queue_unlock(dev, flags);
+
+    return result;
+}
+
+/*
+ * Complete a block request (called by driver from IRQ)
+ */
+void block_complete(block_device_t *dev, block_request_t *req) {
+    if (!dev || !req) return;
+
+    /* Mark as complete */
+    req->complete = true;
+
+    /* Call callback if provided */
+    if (req->callback) {
+        req->callback(req, req->callback_ctx);
+    }
+
+    /* Decrement in-flight counter */
+    uint64_t flags = block_queue_lock(dev);
+    if (dev->in_flight > 0) {
+        dev->in_flight--;
+    }
+    block_queue_unlock(dev, flags);
 }

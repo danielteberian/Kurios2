@@ -18,6 +18,12 @@ typedef enum {
     BLOCK_FLUSH
 } block_req_type_t;
 
+/* Forward declaration */
+struct block_request;
+
+/* Async completion callback */
+typedef void (*block_callback_t)(struct block_request *req, void *ctx);
+
 /* Block request structure */
 typedef struct block_request {
     block_req_type_t type;      /* Request type */
@@ -27,6 +33,11 @@ typedef struct block_request {
     volatile bool complete;     /* Completion flag */
     volatile int status;        /* Result: 0 = success, <0 = error */
     struct block_request *next; /* Next request in queue */
+
+    /* Async I/O support */
+    block_callback_t callback;  /* Completion callback (NULL for sync) */
+    void *callback_ctx;         /* Context for callback */
+    void *driver_private;       /* Driver-specific data */
 } block_request_t;
 
 /* Forward declaration */
@@ -54,6 +65,7 @@ typedef struct block_device {
     /* Capabilities */
     bool read_only;                     /* Device is read-only */
     bool removable;                     /* Device is removable */
+    bool async_capable;                 /* Device supports async I/O */
 
     /* Operations */
     block_ops_t *ops;
@@ -61,6 +73,8 @@ typedef struct block_device {
     /* Request queue (simple FIFO) */
     block_request_t *queue_head;
     block_request_t *queue_tail;
+    uint32_t queue_lock;                /* Spinlock for queue (use raw uint32 to avoid header) */
+    uint32_t in_flight;                 /* Number of requests in flight */
 
     /* Statistics */
     uint64_t read_sectors;
@@ -159,6 +173,26 @@ int block_submit(block_device_t *dev, block_request_t *req);
  * @return 0 on success, negative error on failure
  */
 int block_wait(block_request_t *req);
+
+/*
+ * Submit an async block request with callback
+ *
+ * @param dev       Block device
+ * @param req       Request to submit
+ * @param callback  Completion callback
+ * @param ctx       Context for callback
+ * @return 0 on success, negative error on failure
+ */
+int block_submit_async(block_device_t *dev, block_request_t *req,
+                       block_callback_t callback, void *ctx);
+
+/*
+ * Complete a block request (called by driver from IRQ)
+ *
+ * @param dev  Block device
+ * @param req  Request that completed
+ */
+void block_complete(block_device_t *dev, block_request_t *req);
 
 /*
  * List all block devices (for debugging)
