@@ -354,6 +354,7 @@ void virtqueue_destroy(virtqueue_t *vq) {
  * Probe callback for virtio-blk devices
  */
 extern void virtio_blk_probe(virtio_device_t *dev);
+extern void virtio_net_probe(virtio_device_t *dev);
 
 /*
  * Scan for virtio devices
@@ -413,6 +414,9 @@ static void virtio_pci_callback(pci_device_t *pci_dev, void *ctx) {
 
     /* Probe device-specific driver */
     switch (device_type) {
+        case VIRTIO_DEV_NET:
+            virtio_net_probe(vdev);
+            break;
         case VIRTIO_DEV_BLOCK:
             virtio_blk_probe(vdev);
             break;

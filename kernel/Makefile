@@ -45,6 +45,7 @@ C_SOURCES := \
     drivers/rtc.c \
     drivers/virtio/virtio.c \
     drivers/virtio/virtio_blk.c \
+    drivers/virtio/virtio_net.c \
     drivers/partition.c \
     sched/thread.c \
     sched/sched.c \
