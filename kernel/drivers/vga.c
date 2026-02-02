@@ -11,8 +11,9 @@
 /* VGA buffer physical address */
 #define VGA_PHYS_ADDR 0xB8000
 
-/* Virtual address for VGA buffer - use address in kernel dynamic range */
-#define VGA_VIRT_ADDR 0xFFFFFFFF8F000000UL
+/* VGA virtual address in kernel space (shared with all processes via PML4[511])
+ * Use 0xFFFFFFFF90000000 range like APIC and other MMIO */
+#define VGA_VIRT_ADDR 0xFFFFFFFF90000000UL
 
 /* VGA buffer pointer */
 static volatile uint16_t *vga_buffer = NULL;
@@ -54,8 +55,10 @@ static void vga_scroll(void) {
 void vga_init(void) {
     INFO("Initializing VGA text mode...");
 
-    /* Map VGA buffer to virtual address */
-    int ret = vmm_map_page(VGA_VIRT_ADDR, VGA_PHYS_ADDR, PTE_PRESENT | PTE_WRITABLE);
+    /* Map VGA buffer to kernel-space virtual address
+     * Use PTE_PCD (cache disable) for memory-mapped I/O
+     * This address is in PML4[511] which is shared with all user processes */
+    int ret = vmm_map_page(VGA_VIRT_ADDR, VGA_PHYS_ADDR, PTE_KERNEL_RW | PTE_PCD);
     if (ret != 0) {
         ERROR("Failed to map VGA buffer");
         return;
