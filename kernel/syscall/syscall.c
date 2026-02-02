@@ -596,9 +596,8 @@ static int64_t sys_wait4(uint64_t pid_arg, uint64_t status_ptr,
             return -ECHILD;  /* No children to wait for */
         }
 
-        /* Look for a zombie child */
+        /* Priority 1: Check for zombie children */
         process_t *child = process_find_zombie_child(parent->pid, wait_for);
-
         if (child) {
             /* Found a zombie child - reap it */
             pid_t child_pid = child->pid;
@@ -607,11 +606,17 @@ static int64_t sys_wait4(uint64_t pid_arg, uint64_t status_ptr,
             DEBUG("sys_wait4: found zombie child PID %u, exit_code=%d",
                   child_pid, exit_code);
 
-            /* Store status if requested
-             * Format: exit_code in high byte, signal in low byte
-             * For normal exit: (exit_code << 8) | 0 */
+            /* Encode status based on exit reason */
+            int kstatus;
+            if (exit_code >= 128) {
+                /* Died by signal: signal number in low 7 bits */
+                kstatus = exit_code - 128;
+            } else {
+                /* Normal exit: exit code in bits 8-15 */
+                kstatus = (exit_code & 0xff) << 8;
+            }
+
             if (status) {
-                int kstatus = (exit_code & 0xff) << 8;  /* Normal exit */
                 if (copy_to_user(status, &kstatus, sizeof(int)) < 0) {
                     return -EFAULT;
                 }
@@ -623,7 +628,59 @@ static int64_t sys_wait4(uint64_t pid_arg, uint64_t status_ptr,
             return (int64_t)child_pid;
         }
 
-        /* No zombie child found */
+        /* Priority 2: Check for stopped children (if WUNTRACED) */
+        extern process_t *process_find_stopped_child(uint32_t parent_pid, uint32_t child_pid);
+        if (options & WUNTRACED) {
+            child = process_find_stopped_child(parent->pid, wait_for);
+            if (child) {
+                pid_t child_pid = child->pid;
+                int stop_sig = child->stop_signal;
+
+                DEBUG("sys_wait4: found stopped child PID %u, signal=%d",
+                      child_pid, stop_sig);
+
+                /* Mark as reported */
+                child->stop_reported = true;
+
+                /* Encode status: 0x7f | (signal << 8) */
+                int kstatus = 0x7f | ((stop_sig & 0xff) << 8);
+
+                if (status) {
+                    if (copy_to_user(status, &kstatus, sizeof(int)) < 0) {
+                        return -EFAULT;
+                    }
+                }
+
+                return (int64_t)child_pid;
+            }
+        }
+
+        /* Priority 3: Check for continued children (if WCONTINUED) */
+        extern process_t *process_find_continued_child(uint32_t parent_pid, uint32_t child_pid);
+        if (options & WCONTINUED) {
+            child = process_find_continued_child(parent->pid, wait_for);
+            if (child) {
+                pid_t child_pid = child->pid;
+
+                DEBUG("sys_wait4: found continued child PID %u", child_pid);
+
+                /* Mark as reported */
+                child->continue_reported = true;
+
+                /* Encode status: 0xffff (special marker for WIFCONTINUED) */
+                int kstatus = 0xffff;
+
+                if (status) {
+                    if (copy_to_user(status, &kstatus, sizeof(int)) < 0) {
+                        return -EFAULT;
+                    }
+                }
+
+                return (int64_t)child_pid;
+            }
+        }
+
+        /* No child state change found */
         if (options & WNOHANG) {
             /* Don't block - return 0 indicating no child changed state */
             return 0;
@@ -645,9 +702,9 @@ static int64_t sys_wait4(uint64_t pid_arg, uint64_t status_ptr,
  *
  * Special pid values:
  *   > 0:  Send to specific process
- *   == 0: Send to all processes in same process group (not implemented)
+ *   == 0: Send to all processes in current process group
  *   == -1: Send to all processes except init (not implemented)
- *   < -1: Send to process group -pid (not implemented)
+ *   < -1: Send to process group -pid
  */
 static int64_t sys_kill(uint64_t pid_arg, uint64_t sig,
                         uint64_t arg3, uint64_t arg4,
@@ -665,13 +722,38 @@ static int64_t sys_kill(uint64_t pid_arg, uint64_t sig,
         return -EINVAL;
     }
 
-    /* For now, only support sending to specific process */
-    if (pid <= 0) {
-        WARN("sys_kill: process groups not implemented (pid=%d)", pid);
-        return -ESRCH;
+    /* pid > 0: Send to specific process */
+    if (pid > 0) {
+        return signal_send((uint32_t)pid, signum);
     }
 
-    return signal_send((uint32_t)pid, signum);
+    /* Need pgrp.h for process group operations */
+    extern int pgrp_send_signal(uint32_t pgrp, int sig);
+
+    /* pid == 0: Send to current process group */
+    if (pid == 0) {
+        process_t *proc = process_current();
+        if (!proc) {
+            return -ESRCH;
+        }
+        int ret = pgrp_send_signal(proc->pgrp, signum);
+        return ret > 0 ? 0 : ret;  /* Return 0 on success, error otherwise */
+    }
+
+    /* pid == -1: Send to all processes except init */
+    if (pid == -1) {
+        WARN("sys_kill: kill(-1) not implemented yet");
+        return -ENOSYS;
+    }
+
+    /* pid < -1: Send to process group -pid */
+    if (pid < -1) {
+        uint32_t pgrp = (uint32_t)(-pid);
+        int ret = pgrp_send_signal(pgrp, signum);
+        return ret > 0 ? 0 : ret;  /* Return 0 on success, error otherwise */
+    }
+
+    return -EINVAL;
 }
 
 /* ============================================================================
@@ -1947,12 +2029,20 @@ static int64_t sys_setpgid(uint64_t pid, uint64_t pgid, uint64_t arg3,
     uint32_t target_pid = pid ? (uint32_t)pid : proc->pid;
     uint32_t new_pgid = pgid ? (uint32_t)pgid : target_pid;
 
+    /* Validate the setpgid operation */
+    extern int pgrp_validate_setpgid(uint32_t target_pid, uint32_t new_pgrp);
+    int ret = pgrp_validate_setpgid(target_pid, new_pgid);
+    if (ret < 0) {
+        return ret;
+    }
+
     process_t *target = process_get_by_pid(target_pid);
     if (!target) {
         return -ESRCH;
     }
 
     target->pgrp = new_pgid;
+    DEBUG("sys_setpgid: PID %u set to pgrp %u", target_pid, new_pgid);
     return 0;
 }
 

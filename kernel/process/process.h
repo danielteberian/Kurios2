@@ -9,6 +9,7 @@
 /* Forward declarations */
 struct fd_table;
 struct address_space;
+struct tty;
 
 /* Forward declaration for signal state */
 typedef struct signal_state signal_state_t;
@@ -29,6 +30,7 @@ typedef enum {
     PROC_READY,         /* Ready to run */
     PROC_RUNNING,       /* Currently executing */
     PROC_BLOCKED,       /* Waiting for something */
+    PROC_STOPPED,       /* Stopped by signal (Ctrl+Z, SIGSTOP) */
     PROC_ZOMBIE,        /* Exited, waiting for parent to reap */
     PROC_DEAD           /* Fully terminated, slot can be reused */
 } process_state_t;
@@ -62,6 +64,8 @@ typedef struct process {
     pid_t pgrp;                     /* Process group ID */
     pid_t session_id;               /* Session ID */
     int exit_code;                  /* Exit status (valid when ZOMBIE) */
+    struct tty *ctty;               /* Controlling terminal */
+    uint32_t exec_count;            /* Number of times exec() called */
 
     /* Main thread (for single-threaded processes) */
     thread_t *main_thread;          /* Primary thread of execution */
@@ -91,6 +95,11 @@ typedef struct process {
 
     /* Alarm timer */
     uint64_t alarm_ticks;           /* PIT tick when alarm should fire (0 = none) */
+
+    /* Job control */
+    int stop_signal;                /* Signal that stopped process (valid when STOPPED) */
+    bool stop_reported;             /* Parent notified of stop via wait() */
+    bool continue_reported;         /* Parent notified of continuation via wait() */
 } process_t;
 
 /*
@@ -190,6 +199,43 @@ bool process_is_initialized(void);
  * Get total number of active processes
  */
 uint32_t process_count(void);
+
+/*
+ * Stop a process (called by signal handler)
+ * Removes process from scheduler and marks as stopped
+ *
+ * @param proc   Process to stop
+ * @param signum Signal that stopped the process
+ */
+void process_stop(process_t *proc, int signum);
+
+/*
+ * Continue a stopped process (called by SIGCONT handler)
+ * Re-adds process to scheduler
+ *
+ * @param proc   Process to continue
+ */
+void process_continue(process_t *proc);
+
+/*
+ * Find a stopped child process that hasn't been reported yet
+ * Used by waitpid with WUNTRACED flag
+ *
+ * @param parent_pid  Parent process ID
+ * @param child_pid   Specific child PID to wait for, or -1 for any child
+ * @return Stopped child process, or NULL if none
+ */
+process_t *process_find_stopped_child(pid_t parent_pid, pid_t child_pid);
+
+/*
+ * Find a continued child process that hasn't been reported yet
+ * Used by waitpid with WCONTINUED flag
+ *
+ * @param parent_pid  Parent process ID
+ * @param child_pid   Specific child PID to wait for, or -1 for any child
+ * @return Continued child process, or NULL if none
+ */
+process_t *process_find_continued_child(pid_t parent_pid, pid_t child_pid);
 
 #ifdef DEBUG_TESTS
 /*

@@ -248,6 +248,22 @@ sig_default_action_t signal_default_action(int signum);
 void signal_send_sigchld(uint32_t child_pid, uint32_t parent_pid);
 
 /*
+ * Send SIGCHLD to parent when child stops
+ *
+ * @param child_pid  PID of the child that stopped
+ * @param parent_pid PID of the parent to notify
+ */
+void signal_send_sigchld_stopped(uint32_t child_pid, uint32_t parent_pid);
+
+/*
+ * Send SIGCHLD to parent when child continues
+ *
+ * @param child_pid  PID of the child that continued
+ * @param parent_pid PID of the parent to notify
+ */
+void signal_send_sigchld_continued(uint32_t child_pid, uint32_t parent_pid);
+
+/*
  * Check if signal is valid
  */
 static inline bool signal_valid(int signum) {

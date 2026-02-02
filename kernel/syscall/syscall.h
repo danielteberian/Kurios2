@@ -138,6 +138,7 @@
 /* waitpid options */
 #define WNOHANG         1       /* Don't block waiting */
 #define WUNTRACED       2       /* Also return stopped children */
+#define WCONTINUED      8       /* Also return continued children */
 
 /* waitpid macros - extract info from status */
 #define WIFEXITED(status)       (((status) & 0x7f) == 0)
@@ -146,6 +147,7 @@
 #define WTERMSIG(status)        ((status) & 0x7f)
 #define WIFSTOPPED(status)      (((status) & 0xff) == 0x7f)
 #define WSTOPSIG(status)        (((status) >> 8) & 0xff)
+#define WIFCONTINUED(status)    ((status) == 0xffff)
 
 /* mmap flags */
 #define PROT_NONE       0x0

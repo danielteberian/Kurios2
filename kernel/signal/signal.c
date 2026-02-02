@@ -143,9 +143,20 @@ int signal_send(uint32_t pid, int signum)
         DEBUG("Signal: Sent signal %d to PID %u", signum, pid);
     }
 
-    /* If signal wakes process, make it ready */
-    if (signum == SIGCONT && proc->state == PROC_BLOCKED) {
-        /* TODO: Wake up blocked process */
+    /* SIGCONT automatically resumes stopped processes */
+    if (signum == SIGCONT && proc->state == PROC_STOPPED) {
+        process_continue(proc);
+        /* Clear pending stop signals */
+        if (proc->signals) {
+            sigdelset(&proc->signals->pending, SIGSTOP);
+            sigdelset(&proc->signals->pending, SIGTSTP);
+            sigdelset(&proc->signals->pending, SIGTTIN);
+            sigdelset(&proc->signals->pending, SIGTTOU);
+        }
+        /* Notify parent */
+        if (proc->parent_pid != proc->pid) {
+            signal_send_sigchld_continued(proc->pid, proc->parent_pid);
+        }
     }
 
     return 0;
@@ -314,15 +325,22 @@ static void handle_default_signal(process_t *proc, int signum)
     case SIG_ACTION_STOP:
         /* Stop the process */
         DEBUG("Signal: Process %u stopped by signal %d", proc->pid, signum);
-        proc->state = PROC_BLOCKED;
-        /* TODO: Notify parent via SIGCHLD */
+        process_stop(proc, signum);
+        /* Notify parent via SIGCHLD */
+        if (proc->parent_pid != proc->pid) {
+            signal_send_sigchld_stopped(proc->pid, proc->parent_pid);
+        }
         break;
 
     case SIG_ACTION_CONT:
         /* Continue the process */
-        if (proc->state == PROC_BLOCKED) {
+        if (proc->state == PROC_STOPPED) {
             DEBUG("Signal: Process %u continued by signal %d", proc->pid, signum);
-            proc->state = PROC_READY;
+            process_continue(proc);
+            /* Notify parent via SIGCHLD */
+            if (proc->parent_pid != proc->pid) {
+                signal_send_sigchld_continued(proc->pid, proc->parent_pid);
+            }
         }
         break;
 
@@ -528,6 +546,47 @@ void signal_send_sigchld(uint32_t child_pid, uint32_t parent_pid)
 
     /* If parent is blocked waiting, we might want to wake it up */
     /* For now, the scheduler will handle this on next reschedule */
+}
+
+/*
+ * Send SIGCHLD to parent when child stops
+ */
+void signal_send_sigchld_stopped(uint32_t child_pid, uint32_t parent_pid)
+{
+    process_t *parent = process_get_by_pid(parent_pid);
+    if (!parent || !parent->signals) {
+        return;
+    }
+
+    sigaction_t *action = &parent->signals->actions[SIGCHLD];
+
+    /* SA_NOCLDSTOP: don't notify parent when children stop */
+    if (action->sa_flags & SA_NOCLDSTOP) {
+        return;
+    }
+
+    if (action->sa_handler != SIG_IGN) {
+        sigaddset(&parent->signals->pending, SIGCHLD);
+        DEBUG("Signal: Sent SIGCHLD to parent PID %u (child %u stopped)", parent_pid, child_pid);
+    }
+}
+
+/*
+ * Send SIGCHLD to parent when child continues
+ */
+void signal_send_sigchld_continued(uint32_t child_pid, uint32_t parent_pid)
+{
+    process_t *parent = process_get_by_pid(parent_pid);
+    if (!parent || !parent->signals) {
+        return;
+    }
+
+    sigaction_t *action = &parent->signals->actions[SIGCHLD];
+
+    if (action->sa_handler != SIG_IGN) {
+        sigaddset(&parent->signals->pending, SIGCHLD);
+        DEBUG("Signal: Sent SIGCHLD to parent PID %u (child %u continued)", parent_pid, child_pid);
+    }
 }
 
 #ifdef DEBUG_TESTS

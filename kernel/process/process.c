@@ -46,6 +46,7 @@ static const char *state_names[] = {
     [PROC_READY]    = "READY",
     [PROC_RUNNING]  = "RUNNING",
     [PROC_BLOCKED]  = "BLOCKED",
+    [PROC_STOPPED]  = "STOPPED",
     [PROC_ZOMBIE]   = "ZOMBIE",
     [PROC_DEAD]     = "DEAD"
 };
@@ -258,6 +259,11 @@ process_t *process_create(const char *name) {
     strncpy(proc->cwd, "/", sizeof(proc->cwd));  /* Default to root */
     proc->umask = 022;  /* Default umask: rw-r--r-- for files, rwxr-xr-x for dirs */
     proc->alarm_ticks = 0;  /* No alarm pending */
+    proc->ctty = NULL;  /* No controlling terminal initially */
+    proc->exec_count = 0;  /* No exec() calls yet */
+    proc->stop_signal = 0;  /* Not stopped */
+    proc->stop_reported = false;  /* Stop not reported */
+    proc->continue_reported = false;  /* Continue not reported */
     proc->as = as_create();  /* Create address space with VMA tracking */
     if (proc->as) {
         proc->cr3 = proc->as->cr3;  /* Sync cr3 with address space */
@@ -477,6 +483,135 @@ bool process_is_initialized(void) {
  */
 uint32_t process_count(void) {
     return active_processes;
+}
+
+/*
+ * Stop a process (called by signal handler)
+ * Removes process from scheduler and marks as stopped
+ */
+void process_stop(process_t *proc, int signum) {
+    if (!proc) {
+        return;
+    }
+
+    /* Can't stop zombie or dead processes */
+    if (proc->state == PROC_ZOMBIE || proc->state == PROC_DEAD) {
+        return;
+    }
+
+    uint64_t flags = spin_lock_irqsave(&process_lock);
+
+    proc->state = PROC_STOPPED;
+    proc->stop_signal = signum;
+    proc->stop_reported = false;  /* Not yet reported to parent */
+
+    spin_unlock_irqrestore(&process_lock, flags);
+
+    DEBUG("Process: PID %u stopped by signal %d", proc->pid, signum);
+
+    /* Note: Thread blocking is handled by scheduler when it sees PROC_STOPPED */
+    /* The current thread will be blocked when it returns from the signal handler */
+}
+
+/*
+ * Continue a stopped process (called by SIGCONT handler)
+ * Re-adds process to scheduler
+ */
+void process_continue(process_t *proc) {
+    if (!proc) {
+        return;
+    }
+
+    /* Only continue stopped processes */
+    if (proc->state != PROC_STOPPED) {
+        return;
+    }
+
+    uint64_t flags = spin_lock_irqsave(&process_lock);
+
+    proc->state = PROC_READY;
+    proc->stop_signal = 0;
+    proc->continue_reported = false;  /* Not yet reported to parent */
+
+    spin_unlock_irqrestore(&process_lock, flags);
+
+    DEBUG("Process: PID %u continued", proc->pid);
+
+    /* Unblock the thread so it can be scheduled */
+    if (proc->main_thread) {
+        thread_unblock(proc->main_thread);
+    }
+}
+
+/*
+ * Find a stopped child process that hasn't been reported yet
+ * Used by waitpid with WUNTRACED flag
+ */
+process_t *process_find_stopped_child(pid_t parent_pid, pid_t child_pid) {
+    uint64_t flags = spin_lock_irqsave(&process_lock);
+
+    for (uint32_t i = 1; i < MAX_PROCESSES; i++) {
+        process_t *proc = process_table[i];
+        if (!proc) {
+            continue;
+        }
+
+        /* Check if this is a child of the specified parent */
+        if (proc->parent_pid != parent_pid) {
+            continue;
+        }
+
+        /* If child_pid is specified, only match that specific child */
+        if (child_pid != (pid_t)-1 && proc->pid != child_pid) {
+            continue;
+        }
+
+        /* Check if child is stopped and not yet reported */
+        if (proc->state == PROC_STOPPED && !proc->stop_reported) {
+            spin_unlock_irqrestore(&process_lock, flags);
+            return proc;
+        }
+    }
+
+    spin_unlock_irqrestore(&process_lock, flags);
+    return NULL;
+}
+
+/*
+ * Find a continued child process that hasn't been reported yet
+ * Used by waitpid with WCONTINUED flag
+ */
+process_t *process_find_continued_child(pid_t parent_pid, pid_t child_pid) {
+    uint64_t flags = spin_lock_irqsave(&process_lock);
+
+    for (uint32_t i = 1; i < MAX_PROCESSES; i++) {
+        process_t *proc = process_table[i];
+        if (!proc) {
+            continue;
+        }
+
+        /* Check if this is a child of the specified parent */
+        if (proc->parent_pid != parent_pid) {
+            continue;
+        }
+
+        /* If child_pid is specified, only match that specific child */
+        if (child_pid != (pid_t)-1 && proc->pid != child_pid) {
+            continue;
+        }
+
+        /* Check if child was continued and not yet reported */
+        if (proc->state != PROC_STOPPED && !proc->continue_reported) {
+            /* Must have been stopped before */
+            if (proc->stop_signal != 0 || proc->stop_reported) {
+                spin_unlock_irqrestore(&process_lock, flags);
+                return proc;
+            }
+        }
+    }
+
+    spin_unlock_irqrestore(&process_lock, flags);
+    return NULL;
 }
 
 #ifdef DEBUG_TESTS

@@ -49,6 +49,7 @@ C_SOURCES := \
     sched/thread.c \
     sched/sched.c \
     process/process.c \
+    process/pgrp.c \
     syscall/syscall.c \
     user/user_entry.c \
     loader/elf_loader.c \
