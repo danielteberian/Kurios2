@@ -455,6 +455,27 @@
     - `clock_gettime()` now returns real time for CLOCK_REALTIME
     - Uses HPET for microsecond precision when available, falls back to PIT
 
+### ext2 Symbolic Links [NEW]
+- [2026-02-02] Added symlink support to ext2 filesystem
+  - **VFS Layer:**
+    - Added `symlink` and `readlink` callbacks to `node_ops` (`kernel/fs/vfs.h`)
+    - Added `vfs_symlink()` and `vfs_readlink()` functions (`kernel/fs/vfs.c`)
+  - **ext2 Implementation:**
+    - `ext2_dir_symlink()` - creates symlinks in directories
+    - `ext2_readlink()` - reads symlink target path
+    - `ext2_symlink_ops` - operation table for symlink nodes
+    - Fast symlinks: target stored in i_block array (up to 60 bytes)
+    - Slow symlinks: target stored in data blocks (for longer paths)
+  - **Syscalls:**
+    - `sys_symlink(target, linkpath)` - create symbolic link
+    - `sys_readlink(path, buf, bufsiz)` - read symlink target
+    - Previously stubbed as -ENOSYS, now fully functional
+  - **Files modified:**
+    - `kernel/fs/vfs.h` - added symlink/readlink to node_ops
+    - `kernel/fs/vfs.c` - added vfs_symlink/vfs_readlink
+    - `kernel/fs/ext2.c` - added ext2 symlink operations
+    - `kernel/syscall/syscall.c` - implemented sys_symlink/sys_readlink
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000

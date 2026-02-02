@@ -140,7 +140,7 @@
 - [x] Inode allocation (bitmap)
 - [x] Directory operations (readdir, finddir, mkdir, rmdir)
 - [x] File read/write (direct + indirect blocks)
-- [ ] Symbolic links
+- [x] Symbolic links (fast + slow symlinks)
 
 ### 3.3 Devfs Improvements
 - [ ] Dynamic device node creation

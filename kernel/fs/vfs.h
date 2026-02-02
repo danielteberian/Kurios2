@@ -116,6 +116,8 @@ struct node_ops {
     int (*truncate)(vfs_node_t *node, uint64_t size);
     int (*stat)(vfs_node_t *node, vfs_stat_t *st);
     int (*ioctl)(vfs_node_t *node, unsigned long request, void *arg);
+    int (*symlink)(vfs_node_t *parent, const char *name, const char *target);
+    ssize_t (*readlink)(vfs_node_t *node, char *buf, size_t size);
 };
 
 /* VFS node (inode equivalent) */
@@ -213,6 +215,12 @@ int vfs_rmdir(const char *path);
 int vfs_unlink(const char *path);
 int vfs_rename(const char *oldpath, const char *newpath);
 int vfs_readdir(int fd, dirent_t *dent);
+
+/*
+ * Symbolic Link Operations
+ */
+int vfs_symlink(const char *target, const char *linkpath);
+ssize_t vfs_readlink(const char *path, char *buf, size_t size);
 
 /*
  * Node Management

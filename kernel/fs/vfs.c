@@ -994,6 +994,67 @@ int vfs_readdir(int fd, dirent_t *dent) {
 }
 
 /*
+ * Symbolic Link Operations
+ */
+int vfs_symlink(const char *target, const char *linkpath) {
+    if (!target || !linkpath) {
+        return VFS_EINVAL;
+    }
+
+    /* Get parent directory and link name */
+    char name[VFS_NAME_MAX + 1];
+    vfs_node_t *parent = vfs_lookup_parent(linkpath, name, sizeof(name));
+    if (!parent) {
+        return VFS_ENOENT;
+    }
+
+    if (parent->type != VFS_DIR) {
+        vfs_node_unref(parent);
+        return VFS_ENOTDIR;
+    }
+
+    /* Check if symlink already exists */
+    vfs_node_t *existing = lookup_in_dir(parent, name);
+    if (existing) {
+        vfs_node_unref(existing);
+        vfs_node_unref(parent);
+        return VFS_EEXIST;
+    }
+
+    int err = VFS_EIO;
+    if (parent->ops && parent->ops->symlink) {
+        err = parent->ops->symlink(parent, name, target);
+    }
+
+    vfs_node_unref(parent);
+    return err;
+}
+
+ssize_t vfs_readlink(const char *path, char *buf, size_t size) {
+    if (!path || !buf || size == 0) {
+        return VFS_EINVAL;
+    }
+
+    vfs_node_t *node = vfs_lookup(path);
+    if (!node) {
+        return VFS_ENOENT;
+    }
+
+    if (node->type != VFS_SYMLINK) {
+        vfs_node_unref(node);
+        return VFS_EINVAL;
+    }
+
+    ssize_t result = VFS_EIO;
+    if (node->ops && node->ops->readlink) {
+        result = node->ops->readlink(node, buf, size);
+    }
+
+    vfs_node_unref(node);
+    return result;
+}
+
+/*
  * Debug
  */
 void vfs_dump_tree(vfs_node_t *node, int depth) {

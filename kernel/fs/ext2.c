@@ -13,6 +13,7 @@ static kmem_cache_t *ext2_inode_info_cache;
 /* Forward declarations */
 static node_ops_t ext2_file_ops;
 static node_ops_t ext2_dir_ops;
+static node_ops_t ext2_symlink_ops;
 static vfs_node_t *ext2_mount(const char *source, uint32_t flags);
 static int ext2_unmount(vfs_mount_t *mount);
 
@@ -718,6 +719,8 @@ static vfs_node_t *ext2_create_node(ext2_fs_t *fs, uint32_t ino, ext2_inode_t *i
 
     if (node->type == VFS_DIR) {
         node->ops = &ext2_dir_ops;
+    } else if (node->type == VFS_SYMLINK) {
+        node->ops = &ext2_symlink_ops;
     } else {
         node->ops = &ext2_file_ops;
     }
@@ -1610,6 +1613,200 @@ static int ext2_dir_rmdir(vfs_node_t *parent, const char *name) {
 }
 
 /*
+ * Symbolic Link Operations
+ */
+
+/* Maximum size for fast symlink (stored in inode blocks array) */
+#define EXT2_FAST_SYMLINK_MAX (EXT2_N_BLOCKS * sizeof(uint32_t))  /* 60 bytes */
+
+/*
+ * Read symbolic link target
+ */
+static ssize_t ext2_readlink(vfs_node_t *node, char *buf, size_t size) {
+    ext2_inode_info_t *info = node->private;
+    if (!info) {
+        return VFS_EIO;
+    }
+
+    ext2_fs_t *fs = info->fs;
+    ext2_inode_t *inode = &info->inode;
+
+    /* Check if this is a symlink */
+    if ((inode->i_mode & EXT2_S_IFMT) != EXT2_S_IFLNK) {
+        return VFS_EINVAL;
+    }
+
+    uint32_t link_size = inode->i_size;
+    if (link_size == 0) {
+        return 0;
+    }
+
+    /* Determine if it's a fast symlink (stored in i_block) */
+    bool fast_symlink = (inode->i_blocks == 0) && (link_size <= EXT2_FAST_SYMLINK_MAX);
+
+    if (fast_symlink) {
+        /* Target stored directly in i_block array */
+        size_t copy_size = (link_size < size) ? link_size : size;
+        memcpy(buf, (char *)inode->i_block, copy_size);
+        return copy_size;
+    } else {
+        /* Target stored in data blocks */
+        size_t copy_size = (link_size < size) ? link_size : size;
+        size_t bytes_read = 0;
+
+        uint8_t *block_buf = kmalloc(fs->block_size);
+        if (!block_buf) {
+            return VFS_ENOMEM;
+        }
+
+        while (bytes_read < copy_size) {
+            uint32_t logical_block = bytes_read / fs->block_size;
+            uint32_t block_offset = bytes_read % fs->block_size;
+            uint32_t chunk = fs->block_size - block_offset;
+            if (chunk > copy_size - bytes_read) {
+                chunk = copy_size - bytes_read;
+            }
+
+            uint32_t phys_block = ext2_get_block(fs, inode, logical_block);
+            if (phys_block == 0) {
+                kfree(block_buf);
+                return VFS_EIO;
+            }
+
+            if (ext2_read_block(fs, phys_block, block_buf) != 0) {
+                kfree(block_buf);
+                return VFS_EIO;
+            }
+
+            memcpy(buf + bytes_read, block_buf + block_offset, chunk);
+            bytes_read += chunk;
+        }
+
+        kfree(block_buf);
+        return bytes_read;
+    }
+}
+
+/*
+ * Create a symbolic link
+ */
+static int ext2_dir_symlink(vfs_node_t *parent, const char *name, const char *target) {
+    ext2_inode_info_t *parent_info = parent->private;
+    if (!parent_info) {
+        return VFS_EIO;
+    }
+
+    ext2_fs_t *fs = parent_info->fs;
+    if (fs->read_only) {
+        return VFS_EINVAL;
+    }
+
+    /* Check if name already exists */
+    vfs_node_t *existing = ext2_dir_finddir(parent, name);
+    if (existing) {
+        vfs_node_unref(existing);
+        return VFS_EEXIST;
+    }
+
+    size_t target_len = strlen(target);
+    if (target_len == 0) {
+        return VFS_EINVAL;
+    }
+
+    uint32_t parent_group = (parent_info->ino - 1) / fs->inodes_per_group;
+
+    /* Allocate new inode */
+    uint32_t new_ino = ext2_alloc_inode(fs, parent_group, false);
+    if (new_ino == 0) {
+        return VFS_ENOSPC;
+    }
+
+    /* Initialize symlink inode */
+    ext2_inode_t new_inode;
+    memset(&new_inode, 0, sizeof(ext2_inode_t));
+    new_inode.i_mode = EXT2_S_IFLNK | 0777;  /* Symlinks are always 0777 */
+    new_inode.i_uid = 0;
+    new_inode.i_gid = 0;
+    new_inode.i_size = target_len;
+    new_inode.i_links_count = 1;
+    new_inode.i_blocks = 0;
+
+    /* Determine if we can use fast symlink */
+    if (target_len <= EXT2_FAST_SYMLINK_MAX) {
+        /* Store target directly in i_block array (fast symlink) */
+        memcpy((char *)new_inode.i_block, target, target_len);
+        /* i_blocks stays 0 to indicate fast symlink */
+    } else {
+        /* Allocate block for target */
+        uint32_t data_block = ext2_alloc_block(fs, parent_group);
+        if (data_block == 0) {
+            ext2_free_inode(fs, new_ino, false);
+            return VFS_ENOSPC;
+        }
+
+        /* Write target to block */
+        uint8_t *block_buf = kmalloc(fs->block_size);
+        if (!block_buf) {
+            ext2_free_block(fs, data_block);
+            ext2_free_inode(fs, new_ino, false);
+            return VFS_ENOMEM;
+        }
+
+        memset(block_buf, 0, fs->block_size);
+        memcpy(block_buf, target, target_len);
+
+        if (ext2_write_block(fs, data_block, block_buf) != 0) {
+            kfree(block_buf);
+            ext2_free_block(fs, data_block);
+            ext2_free_inode(fs, new_ino, false);
+            return VFS_EIO;
+        }
+        kfree(block_buf);
+
+        new_inode.i_block[0] = data_block;
+        new_inode.i_blocks = fs->block_size / 512;
+    }
+
+    /* Write inode */
+    if (ext2_write_inode(fs, new_ino, &new_inode) != VFS_OK) {
+        /* Clean up allocated block if any */
+        if (new_inode.i_block[0]) {
+            ext2_free_block(fs, new_inode.i_block[0]);
+        }
+        ext2_free_inode(fs, new_ino, false);
+        return VFS_EIO;
+    }
+
+    /* Add directory entry */
+    int err = ext2_add_dir_entry(parent, new_ino, name, EXT2_FT_SYMLINK);
+    if (err != VFS_OK) {
+        if (new_inode.i_block[0]) {
+            ext2_free_block(fs, new_inode.i_block[0]);
+        }
+        ext2_free_inode(fs, new_ino, false);
+        return err;
+    }
+
+    return VFS_OK;
+}
+
+/*
+ * Symlink stat
+ */
+static int ext2_symlink_stat(vfs_node_t *node, vfs_stat_t *st) {
+    st->size = node->size;
+    st->type = node->type;
+    st->permissions = node->permissions;
+    st->uid = node->uid;
+    st->gid = node->gid;
+    st->nlink = node->nlink;
+    st->atime = node->atime;
+    st->mtime = node->mtime;
+    st->ctime = node->ctime;
+    return VFS_OK;
+}
+
+/*
  * Operation tables
  */
 static node_ops_t ext2_file_ops = {
@@ -1626,6 +1823,8 @@ static node_ops_t ext2_file_ops = {
     .mkdir = NULL,
     .rmdir = NULL,
     .ioctl = NULL,
+    .symlink = NULL,
+    .readlink = NULL,
 };
 
 static node_ops_t ext2_dir_ops = {
@@ -1642,6 +1841,26 @@ static node_ops_t ext2_dir_ops = {
     .mkdir = ext2_dir_mkdir,
     .rmdir = ext2_dir_rmdir,
     .ioctl = NULL,
+    .symlink = ext2_dir_symlink,
+    .readlink = NULL,
+};
+
+static node_ops_t ext2_symlink_ops = {
+    .open = NULL,
+    .close = NULL,
+    .read = NULL,
+    .write = NULL,
+    .truncate = NULL,
+    .stat = ext2_symlink_stat,
+    .readdir = NULL,
+    .finddir = NULL,
+    .create = NULL,
+    .unlink = NULL,
+    .mkdir = NULL,
+    .rmdir = NULL,
+    .ioctl = NULL,
+    .symlink = NULL,
+    .readlink = ext2_readlink,
 };
 
 /*
@@ -1855,6 +2074,8 @@ void ext2_init(void) {
     ext2_file_ops.unlink = NULL;
     ext2_file_ops.mkdir = NULL;
     ext2_file_ops.rmdir = NULL;
+    ext2_file_ops.symlink = NULL;
+    ext2_file_ops.readlink = NULL;
 
     /* Directory operations */
     ext2_dir_ops.open = ext2_dir_open;
@@ -1869,6 +2090,24 @@ void ext2_init(void) {
     ext2_dir_ops.unlink = ext2_dir_unlink;
     ext2_dir_ops.mkdir = ext2_dir_mkdir;
     ext2_dir_ops.rmdir = ext2_dir_rmdir;
+    ext2_dir_ops.symlink = ext2_dir_symlink;
+    ext2_dir_ops.readlink = NULL;
+
+    /* Symlink operations */
+    ext2_symlink_ops.open = NULL;
+    ext2_symlink_ops.close = NULL;
+    ext2_symlink_ops.read = NULL;
+    ext2_symlink_ops.write = NULL;
+    ext2_symlink_ops.truncate = NULL;
+    ext2_symlink_ops.stat = ext2_symlink_stat;
+    ext2_symlink_ops.readdir = NULL;
+    ext2_symlink_ops.finddir = NULL;
+    ext2_symlink_ops.create = NULL;
+    ext2_symlink_ops.unlink = NULL;
+    ext2_symlink_ops.mkdir = NULL;
+    ext2_symlink_ops.rmdir = NULL;
+    ext2_symlink_ops.symlink = NULL;
+    ext2_symlink_ops.readlink = ext2_readlink;
 
     /* Create slab cache for inode info */
     ext2_inode_info_cache = kmem_cache_create("ext2_inode_info",

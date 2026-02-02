@@ -1090,13 +1090,56 @@ static int64_t sys_getdents(uint64_t fd, uint64_t dirp, uint64_t count,
 }
 
 /*
- * sys_readlink - read symbolic link (stub - we don't have symlinks yet)
+ * sys_readlink - read symbolic link
  */
 static int64_t sys_readlink(uint64_t pathname, uint64_t buf, uint64_t bufsiz,
                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
-    (void)pathname; (void)buf; (void)bufsiz;
     (void)arg4; (void)arg5; (void)arg6;
-    return -EINVAL;  /* No symbolic links supported */
+
+    if (!pathname || !buf || bufsiz == 0) {
+        return -EINVAL;
+    }
+
+    /* Copy pathname from user space */
+    char path[OPEN_PATH_MAX];
+    ssize_t path_len = strncpy_from_user(path, (const char *)pathname, OPEN_PATH_MAX);
+    if (path_len < 0) {
+        return path_len;
+    }
+
+    /* Read the symlink */
+    ssize_t result = vfs_readlink(path, (char *)buf, bufsiz);
+    return result;  /* VFS error codes match syscall error codes */
+}
+
+/*
+ * sys_symlink - create a symbolic link
+ */
+static int64_t sys_symlink(uint64_t target, uint64_t linkpath, uint64_t arg3,
+                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (!target || !linkpath) {
+        return -EINVAL;
+    }
+
+    /* Copy target from user space */
+    char target_buf[OPEN_PATH_MAX];
+    ssize_t target_len = strncpy_from_user(target_buf, (const char *)target, OPEN_PATH_MAX);
+    if (target_len < 0) {
+        return target_len;
+    }
+
+    /* Copy linkpath from user space */
+    char link_buf[OPEN_PATH_MAX];
+    ssize_t link_len = strncpy_from_user(link_buf, (const char *)linkpath, OPEN_PATH_MAX);
+    if (link_len < 0) {
+        return link_len;
+    }
+
+    /* Create the symlink */
+    int result = vfs_symlink(target_buf, link_buf);
+    return result;  /* VFS error codes match syscall error codes */
 }
 
 /* ============================================================================
@@ -2451,7 +2494,7 @@ void syscall_init(void) {
 
     /* Filesystem link syscalls - stub implementations returning ENOSYS */
     syscall_register(SYS_LINK, sys_unimplemented);
-    syscall_register(SYS_SYMLINK, sys_unimplemented);
+    syscall_register(SYS_SYMLINK, sys_symlink);
 
     /* I/O multiplexing syscalls - stub implementations returning ENOSYS */
     syscall_register(SYS_POLL, sys_unimplemented);
