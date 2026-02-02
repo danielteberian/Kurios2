@@ -64,6 +64,7 @@ C_SOURCES := \
     net/ip.c \
     net/icmp.c \
     net/udp.c \
+    net/tcp.c \
     net/socket.c \
     net/loopback.c
 

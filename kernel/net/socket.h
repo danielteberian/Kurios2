@@ -39,6 +39,9 @@ typedef struct socket_recv_buf {
     uint16_t src_port;
 } socket_recv_buf_t;
 
+/* Forward declaration for TCP */
+struct tcp_connection;
+
 /* Socket structure */
 typedef struct socket {
     int type;                   /* SOCK_STREAM or SOCK_DGRAM */
@@ -48,8 +51,12 @@ typedef struct socket {
     uint16_t remote_port;       /* Remote port */
     bool bound;                 /* Bound to an address */
     bool connected;             /* Connected to remote */
+    bool listening;             /* Listening for connections (SOCK_STREAM) */
 
-    /* Receive buffer (simple circular buffer for now) */
+    /* TCP connection (for SOCK_STREAM) */
+    struct tcp_connection *tcp_conn;
+
+    /* Receive buffer (for SOCK_DGRAM) */
     socket_recv_buf_t *recv_buf;
     spinlock_t lock;
 } socket_t;
@@ -62,6 +69,8 @@ socket_t *socket_create(int type);
 void socket_destroy(socket_t *sock);
 int socket_bind(socket_t *sock, uint32_t ip, uint16_t port);
 int socket_connect(socket_t *sock, uint32_t ip, uint16_t port);
+int socket_listen(socket_t *sock, int backlog);
+socket_t *socket_accept(socket_t *sock);
 int socket_sendto(socket_t *sock, const void *buf, size_t len,
                   uint32_t dst_ip, uint16_t dst_port);
 ssize_t socket_recvfrom(socket_t *sock, void *buf, size_t len,

@@ -39,6 +39,7 @@
 #include "drivers/partition.h"
 #include "net/netdev.h"
 #include "net/socket.h"
+#include "net/tcp.h"
 #include "lib/string.h"
 #include "boot_info.h"
 
@@ -746,6 +747,7 @@ void kernel_main(BootInfo *boot_info) {
     /* Initialize network subsystem */
     net_init();
     socket_init();
+    tcp_init();
     loopback_init();
 
 #ifdef DEBUG_TESTS

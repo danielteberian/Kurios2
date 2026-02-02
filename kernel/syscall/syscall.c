@@ -3188,8 +3188,8 @@ static int64_t sys_socket(uint64_t domain, uint64_t type, uint64_t protocol,
         return -97;  /* EAFNOSUPPORT */
     }
 
-    if (type != SOCK_DGRAM) {
-        return -95;  /* EOPNOTSUPP - only UDP for now */
+    if (type != SOCK_DGRAM && type != SOCK_STREAM) {
+        return -95;  /* EOPNOTSUPP */
     }
 
     socket_t *sock = socket_create((int)type);
@@ -3247,6 +3247,68 @@ static int64_t sys_connect(uint64_t sockfd, uint64_t addr_ptr, uint64_t addrlen,
 
     socket_t *sock = socket_fds[sockfd];
     return socket_connect(sock, addr.sin_addr, addr.sin_port);
+}
+
+/*
+ * sys_listen - listen for connections
+ */
+static int64_t sys_listen(uint64_t sockfd, uint64_t backlog, uint64_t arg3,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (sockfd >= MAX_SOCKET_FDS || !socket_fds[sockfd]) {
+        return -9;  /* EBADF */
+    }
+
+    socket_t *sock = socket_fds[sockfd];
+    return socket_listen(sock, (int)backlog);
+}
+
+/*
+ * sys_accept - accept incoming connection
+ */
+static int64_t sys_accept(uint64_t sockfd, uint64_t addr_ptr, uint64_t addrlen_ptr,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)addrlen_ptr; (void)arg4; (void)arg5; (void)arg6;
+
+    if (sockfd >= MAX_SOCKET_FDS || !socket_fds[sockfd]) {
+        return -9;  /* EBADF */
+    }
+
+    socket_t *listener = socket_fds[sockfd];
+    socket_t *new_sock = socket_accept(listener);
+
+    if (!new_sock) {
+        return -11;  /* EAGAIN - no connections ready */
+    }
+
+    /* Find free socket FD for new connection */
+    for (int i = 0; i < MAX_SOCKET_FDS; i++) {
+        if (!socket_fds[i]) {
+            socket_fds[i] = new_sock;
+
+            /* Fill in client address if requested */
+            if (addr_ptr) {
+                sockaddr_in_t addr;
+                addr.sin_family = AF_INET;
+                addr.sin_addr = new_sock->remote_ip;
+                addr.sin_port = new_sock->remote_port;
+                memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
+
+                if (copy_to_user((void *)addr_ptr, &addr, sizeof(addr)) < 0) {
+                    socket_destroy(new_sock);
+                    socket_fds[i] = NULL;
+                    return -14;  /* EFAULT */
+                }
+            }
+
+            return i;
+        }
+    }
+
+    /* No free socket FDs */
+    socket_destroy(new_sock);
+    return -24;  /* EMFILE */
 }
 
 /*
@@ -3443,11 +3505,11 @@ void syscall_init(void) {
     /* Socket syscalls */
     syscall_register(SYS_SOCKET, sys_socket);
     syscall_register(SYS_CONNECT, sys_connect);
-    syscall_register(SYS_ACCEPT, sys_unimplemented);  /* TCP not implemented yet */
+    syscall_register(SYS_ACCEPT, sys_accept);
     syscall_register(SYS_SENDTO, sys_sendto);
     syscall_register(SYS_RECVFROM, sys_recvfrom);
     syscall_register(SYS_BIND, sys_bind);
-    syscall_register(SYS_LISTEN, sys_unimplemented);  /* TCP not implemented yet */
+    syscall_register(SYS_LISTEN, sys_listen);
 
     /* Resource usage and time syscalls */
     syscall_register(SYS_GETRUSAGE, sys_getrusage);

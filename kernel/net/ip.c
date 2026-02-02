@@ -3,6 +3,7 @@
 #include "ip.h"
 #include "icmp.h"
 #include "udp.h"
+#include "tcp.h"
 #include "../debug/debug.h"
 #include "../lib/string.h"
 
@@ -104,8 +105,7 @@ int ip_receive(packet_t *pkt) {
             return udp_receive(ip->src_ip, ip->dst_ip, payload, payload_len);
 
         case IP_PROTO_TCP:
-            DEBUG("IP: TCP not implemented yet");
-            return -95;  /* EOPNOTSUPP */
+            return tcp_receive(ip->src_ip, ip->dst_ip, payload, payload_len);
 
         default:
             DEBUG("IP: Unknown protocol %d", ip->protocol);
