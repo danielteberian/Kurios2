@@ -184,12 +184,13 @@
 - [x] Proper zombie reaping
 - [ ] init (PID 1) adopts orphans (low priority)
 
-### 4.4 Credentials
-- [ ] Real/effective/saved UID/GID
-- [ ] setuid()/setgid() proper implementation
-- [ ] setreuid()/setregid()
-- [ ] setresuid()/setresgid()
-- [ ] Supplementary groups (getgroups/setgroups)
+### 4.4 Credentials [x]
+- [x] Real/effective/saved UID/GID
+- [x] setuid()/setgid() proper implementation
+- [x] setreuid()/setregid()
+- [x] setresuid()/setresgid()
+- [x] getresuid()/getresgid()
+- [ ] Supplementary groups (getgroups/setgroups) - deferred
 
 ---
 
@@ -285,9 +286,9 @@
 - [x] chmod()/fchmod() implementation
 - [x] chown()/fchown() implementation
 
-### 7.2 Process Credentials
-- [ ] UID/GID checking on file access
-- [ ] setuid/setgid bit handling on exec
+### 7.2 Process Credentials [x]
+- [x] UID/GID checking on file access
+- [ ] setuid/setgid bit handling on exec (deferred)
 - [ ] Capability system (optional, Linux-style)
 
 ### 7.3 Resource Limits

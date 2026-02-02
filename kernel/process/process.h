@@ -93,6 +93,14 @@ typedef struct process {
     /* File creation mask */
     uint32_t umask;                 /* File mode creation mask (default 022) */
 
+    /* Credentials */
+    uint32_t uid;                   /* Real user ID */
+    uint32_t euid;                  /* Effective user ID (for permission checks) */
+    uint32_t suid;                  /* Saved user ID (for setuid programs) */
+    uint32_t gid;                   /* Real group ID */
+    uint32_t egid;                  /* Effective group ID (for permission checks) */
+    uint32_t sgid;                  /* Saved group ID (for setgid programs) */
+
     /* Alarm timer */
     uint64_t alarm_ticks;           /* PIT tick when alarm should fire (0 = none) */
 

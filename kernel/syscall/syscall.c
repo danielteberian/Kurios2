@@ -1941,42 +1941,236 @@ static int64_t sys_sched_yield(uint64_t arg1, uint64_t arg2, uint64_t arg3,
 
 /*
  * sys_getuid/geteuid/getgid/getegid - get user/group IDs
- * All return 0 (root) for now since we don't have users
  */
 static int64_t sys_getuid(uint64_t arg1, uint64_t arg2, uint64_t arg3,
                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
     (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
-    return 0;  /* root */
+    process_t *proc = process_current();
+    return proc ? (int64_t)proc->uid : 0;
 }
 
 static int64_t sys_geteuid(uint64_t arg1, uint64_t arg2, uint64_t arg3,
                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
     (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
-    return 0;  /* root */
+    process_t *proc = process_current();
+    return proc ? (int64_t)proc->euid : 0;
 }
 
 static int64_t sys_getgid(uint64_t arg1, uint64_t arg2, uint64_t arg3,
                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
     (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
-    return 0;  /* root */
+    process_t *proc = process_current();
+    return proc ? (int64_t)proc->gid : 0;
 }
 
 static int64_t sys_getegid(uint64_t arg1, uint64_t arg2, uint64_t arg3,
                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
     (void)arg1; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
-    return 0;  /* root */
+    process_t *proc = process_current();
+    return proc ? (int64_t)proc->egid : 0;
 }
 
+/*
+ * sys_setuid - set user ID
+ * POSIX semantics: if euid==0 (root), set all IDs; otherwise set only euid if permitted
+ */
 static int64_t sys_setuid(uint64_t uid, uint64_t arg2, uint64_t arg3,
                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
-    (void)uid; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
-    return 0;  /* Always succeed (we're always root) */
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    process_t *proc = process_current();
+    if (!proc) return -ESRCH;
+
+    /* Root can set all IDs */
+    if (proc->euid == 0) {
+        proc->uid = proc->euid = proc->suid = (uint32_t)uid;
+        return 0;
+    }
+
+    /* Non-root can only set euid to uid or suid */
+    if (uid == proc->uid || uid == proc->suid) {
+        proc->euid = (uint32_t)uid;
+        return 0;
+    }
+
+    return -EPERM;
 }
 
+/*
+ * sys_setgid - set group ID
+ */
 static int64_t sys_setgid(uint64_t gid, uint64_t arg2, uint64_t arg3,
                           uint64_t arg4, uint64_t arg5, uint64_t arg6) {
-    (void)gid; (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
-    return 0;  /* Always succeed */
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    process_t *proc = process_current();
+    if (!proc) return -ESRCH;
+
+    /* Root can set all IDs */
+    if (proc->euid == 0) {
+        proc->gid = proc->egid = proc->sgid = (uint32_t)gid;
+        return 0;
+    }
+
+    /* Non-root can only set egid to gid or sgid */
+    if (gid == proc->gid || gid == proc->sgid) {
+        proc->egid = (uint32_t)gid;
+        return 0;
+    }
+
+    return -EPERM;
+}
+
+/*
+ * sys_setreuid - set real and effective user ID
+ */
+static int64_t sys_setreuid(uint64_t ruid, uint64_t euid, uint64_t arg3,
+                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    process_t *proc = process_current();
+    if (!proc) return -ESRCH;
+
+    uint32_t new_ruid = (ruid == (uint64_t)-1) ? proc->uid : (uint32_t)ruid;
+    uint32_t new_euid = (euid == (uint64_t)-1) ? proc->euid : (uint32_t)euid;
+
+    /* Check permissions */
+    if (proc->euid != 0) {
+        /* Non-root: can only set to current values */
+        if ((new_ruid != proc->uid && new_ruid != proc->euid) ||
+            (new_euid != proc->uid && new_euid != proc->euid && new_euid != proc->suid)) {
+            return -EPERM;
+        }
+    }
+
+    /* Set saved UID if we're changing real UID or if euid != old euid */
+    if (new_ruid != proc->uid || (proc->euid != 0 && new_euid != proc->euid)) {
+        proc->suid = new_euid;
+    }
+
+    proc->uid = new_ruid;
+    proc->euid = new_euid;
+    return 0;
+}
+
+/*
+ * sys_setregid - set real and effective group ID
+ */
+static int64_t sys_setregid(uint64_t rgid, uint64_t egid, uint64_t arg3,
+                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+    process_t *proc = process_current();
+    if (!proc) return -ESRCH;
+
+    uint32_t new_rgid = (rgid == (uint64_t)-1) ? proc->gid : (uint32_t)rgid;
+    uint32_t new_egid = (egid == (uint64_t)-1) ? proc->egid : (uint32_t)egid;
+
+    /* Check permissions */
+    if (proc->euid != 0) {
+        if ((new_rgid != proc->gid && new_rgid != proc->egid) ||
+            (new_egid != proc->gid && new_egid != proc->egid && new_egid != proc->sgid)) {
+            return -EPERM;
+        }
+    }
+
+    if (new_rgid != proc->gid || (proc->euid != 0 && new_egid != proc->egid)) {
+        proc->sgid = new_egid;
+    }
+
+    proc->gid = new_rgid;
+    proc->egid = new_egid;
+    return 0;
+}
+
+/*
+ * sys_setresuid - set real, effective, and saved user ID
+ */
+static int64_t sys_setresuid(uint64_t ruid, uint64_t euid, uint64_t suid,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+    process_t *proc = process_current();
+    if (!proc) return -ESRCH;
+
+    uint32_t new_ruid = (ruid == (uint64_t)-1) ? proc->uid : (uint32_t)ruid;
+    uint32_t new_euid = (euid == (uint64_t)-1) ? proc->euid : (uint32_t)euid;
+    uint32_t new_suid = (suid == (uint64_t)-1) ? proc->suid : (uint32_t)suid;
+
+    /* Check permissions */
+    if (proc->euid != 0) {
+        if ((new_ruid != proc->uid && new_ruid != proc->euid && new_ruid != proc->suid) ||
+            (new_euid != proc->uid && new_euid != proc->euid && new_euid != proc->suid) ||
+            (new_suid != proc->uid && new_suid != proc->euid && new_suid != proc->suid)) {
+            return -EPERM;
+        }
+    }
+
+    proc->uid = new_ruid;
+    proc->euid = new_euid;
+    proc->suid = new_suid;
+    return 0;
+}
+
+/*
+ * sys_setresgid - set real, effective, and saved group ID
+ */
+static int64_t sys_setresgid(uint64_t rgid, uint64_t egid, uint64_t sgid,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+    process_t *proc = process_current();
+    if (!proc) return -ESRCH;
+
+    uint32_t new_rgid = (rgid == (uint64_t)-1) ? proc->gid : (uint32_t)rgid;
+    uint32_t new_egid = (egid == (uint64_t)-1) ? proc->egid : (uint32_t)egid;
+    uint32_t new_sgid = (sgid == (uint64_t)-1) ? proc->sgid : (uint32_t)sgid;
+
+    /* Check permissions */
+    if (proc->euid != 0) {
+        if ((new_rgid != proc->gid && new_rgid != proc->egid && new_rgid != proc->sgid) ||
+            (new_egid != proc->gid && new_egid != proc->egid && new_egid != proc->sgid) ||
+            (new_sgid != proc->gid && new_sgid != proc->egid && new_sgid != proc->sgid)) {
+            return -EPERM;
+        }
+    }
+
+    proc->gid = new_rgid;
+    proc->egid = new_egid;
+    proc->sgid = new_sgid;
+    return 0;
+}
+
+/*
+ * sys_getresuid - get real, effective, and saved user ID
+ */
+static int64_t sys_getresuid(uint64_t ruid_ptr, uint64_t euid_ptr, uint64_t suid_ptr,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+    process_t *proc = process_current();
+    if (!proc) return -ESRCH;
+
+    uint32_t *ruid = (uint32_t *)ruid_ptr;
+    uint32_t *euid = (uint32_t *)euid_ptr;
+    uint32_t *suid = (uint32_t *)suid_ptr;
+
+    if (ruid) *ruid = proc->uid;
+    if (euid) *euid = proc->euid;
+    if (suid) *suid = proc->suid;
+    return 0;
+}
+
+/*
+ * sys_getresgid - get real, effective, and saved group ID
+ */
+static int64_t sys_getresgid(uint64_t rgid_ptr, uint64_t egid_ptr, uint64_t sgid_ptr,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+    process_t *proc = process_current();
+    if (!proc) return -ESRCH;
+
+    uint32_t *rgid = (uint32_t *)rgid_ptr;
+    uint32_t *egid = (uint32_t *)egid_ptr;
+    uint32_t *sgid = (uint32_t *)sgid_ptr;
+
+    if (rgid) *rgid = proc->gid;
+    if (egid) *egid = proc->egid;
+    if (sgid) *sgid = proc->sgid;
+    return 0;
 }
 
 /*
@@ -2948,6 +3142,12 @@ void syscall_init(void) {
     syscall_register(SYS_SETGID, sys_setgid);
     syscall_register(SYS_GETEUID, sys_geteuid);
     syscall_register(SYS_GETEGID, sys_getegid);
+    syscall_register(SYS_SETREUID, sys_setreuid);
+    syscall_register(SYS_SETREGID, sys_setregid);
+    syscall_register(SYS_SETRESUID, sys_setresuid);
+    syscall_register(SYS_SETRESGID, sys_setresgid);
+    syscall_register(SYS_GETRESUID, sys_getresuid);
+    syscall_register(SYS_GETRESGID, sys_getresgid);
     syscall_register(SYS_SETSID, sys_setsid);
     syscall_register(SYS_GETPGID, sys_getpgid);
     syscall_register(SYS_SETPGID, sys_setpgid);

@@ -99,9 +99,7 @@ void vfs_node_unref(vfs_node_t *node) {
 /*
  * Permission Checking Helper
  * Returns 0 if access allowed, negative error otherwise
- *
- * For now, this just checks the permission bits.
- * TODO: Add UID/GID checking when credential system is implemented.
+ * Implements proper POSIX permission checking with owner/group/other
  */
 static int vfs_check_permission(vfs_node_t *node, uint32_t access_mode) {
     if (!node) {
@@ -114,7 +112,13 @@ static int vfs_check_permission(vfs_node_t *node, uint32_t access_mode) {
         return VFS_OK;
     }
 
-    /* Check permission bits */
+    /* Get current process */
+    process_t *proc = process_current();
+    if (!proc) {
+        return VFS_OK;  /* Kernel threads can access everything */
+    }
+
+    /* Determine required permissions */
     uint32_t required = 0;
     if (access_mode & O_RDWR) {
         required = VFS_PERM_READ | VFS_PERM_WRITE;
@@ -124,13 +128,36 @@ static int vfs_check_permission(vfs_node_t *node, uint32_t access_mode) {
         required = VFS_PERM_READ;
     }
 
-    /* For now, check against world permissions (last 3 bits) */
-    /* TODO: Check owner/group permissions based on UID/GID */
-    if ((node->permissions & required) != required) {
-        return -13;  /* EACCES */
+    /* Root (euid == 0) can access anything */
+    if (proc->euid == 0) {
+        return VFS_OK;
     }
 
-    return VFS_OK;
+    /* Check owner permissions first */
+    if (proc->euid == node->uid) {
+        uint32_t owner_perms = (node->permissions >> 6) & 0x7;
+        if ((owner_perms & required) == required) {
+            return VFS_OK;
+        }
+        return -13;  /* EACCES - owner doesn't have permission */
+    }
+
+    /* Check group permissions */
+    if (proc->egid == node->gid) {
+        uint32_t group_perms = (node->permissions >> 3) & 0x7;
+        if ((group_perms & required) == required) {
+            return VFS_OK;
+        }
+        return -13;  /* EACCES - group doesn't have permission */
+    }
+
+    /* Check world permissions */
+    uint32_t other_perms = node->permissions & 0x7;
+    if ((other_perms & required) == required) {
+        return VFS_OK;
+    }
+
+    return -13;  /* EACCES */
 }
 
 /*

@@ -258,6 +258,18 @@ process_t *process_create(const char *name) {
     proc->session_id = current_process ? current_process->session_id : pid;
     strncpy(proc->cwd, "/", sizeof(proc->cwd));  /* Default to root */
     proc->umask = 022;  /* Default umask: rw-r--r-- for files, rwxr-xr-x for dirs */
+    /* Inherit credentials from parent, or default to root (0) */
+    if (current_process) {
+        proc->uid = current_process->uid;
+        proc->euid = current_process->euid;
+        proc->suid = current_process->suid;
+        proc->gid = current_process->gid;
+        proc->egid = current_process->egid;
+        proc->sgid = current_process->sgid;
+    } else {
+        proc->uid = proc->euid = proc->suid = 0;  /* Root */
+        proc->gid = proc->egid = proc->sgid = 0;  /* Root group */
+    }
     proc->alarm_ticks = 0;  /* No alarm pending */
     proc->ctty = NULL;  /* No controlling terminal initially */
     proc->exec_count = 0;  /* No exec() calls yet */

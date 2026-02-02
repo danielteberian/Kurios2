@@ -822,3 +822,35 @@
     - Currently checks world permissions (last 3 bits)
     - Devices and directories always allowed (for now)
     - Full UID/GID checking deferred until credential system implemented
+
+### User/Group Credentials (Phase 4.4 & 7.2) [IMPLEMENTED]
+- [2026-02-01] Complete credentials system with proper POSIX semantics
+  - **Files:** `kernel/process/process.h`, `kernel/process/process.c`, `kernel/syscall/syscall.c`
+  - **New fields in process_t:**
+    - `uint32_t uid, euid, suid` - Real, effective, saved user IDs
+    - `uint32_t gid, egid, sgid` - Real, effective, saved group IDs
+  - **Initialization:**
+    - New processes inherit credentials from parent
+    - Init process (PID 1) starts as root (0:0)
+  - **Syscalls implemented:**
+    - `getuid()`, `geteuid()`, `getgid()`, `getegid()` - Get IDs
+    - `setuid()`, `setgid()` - Set IDs (root can set all, non-root restricted)
+    - `setreuid()`, `setregid()` - Set real and effective IDs
+    - `setresuid()`, `setresgid()` - Set all three IDs explicitly
+    - `getresuid()`, `getresgid()` - Get all three IDs
+  - **POSIX semantics:**
+    - Root (euid==0) can set any ID
+    - Non-root can only set to current uid/euid/suid values
+    - Proper saved-ID handling for setuid programs (deferred)
+- [2026-02-01] Enhanced permission checking with UID/GID
+  - **Files:** `kernel/fs/vfs.c`
+  - **Updated `vfs_check_permission()`:**
+    - Checks owner permissions first (bits 6-8)
+    - Then group permissions (bits 3-5)
+    - Then other permissions (bits 0-2)
+    - Root (euid==0) bypasses all checks
+  - **Proper POSIX permission model:**
+    - Owner match uses owner bits only
+    - Group match uses group bits only
+    - Falls back to other bits
+  - **Error handling:** Returns EACCES if permission denied

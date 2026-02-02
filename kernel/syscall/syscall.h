@@ -76,6 +76,12 @@
 #define SYS_SETGID      106
 #define SYS_GETEUID     107
 #define SYS_GETEGID     108
+#define SYS_SETREUID    113
+#define SYS_SETREGID    114
+#define SYS_SETRESUID   117
+#define SYS_SETRESGID   119
+#define SYS_GETRESUID   118
+#define SYS_GETRESGID   120
 #define SYS_GETPPID     110
 #define SYS_SETSID      112
 #define SYS_GETPGID     121
