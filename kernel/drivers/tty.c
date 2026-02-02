@@ -6,6 +6,10 @@
 #include "../debug/debug.h"
 #include "../lib/string.h"
 #include "../signal/signal.h"
+#include "../arch/x86_64/serial.h"
+
+/* Serial port for console output (COM1) */
+#define CONSOLE_SERIAL_PORT 0x3F8
 
 /* Console TTY instance */
 static tty_t console_tty;
@@ -142,7 +146,7 @@ bool tty_is_tty(void) {
 }
 
 /*
- * Output a single character to display
+ * Output a single character to display (VGA and serial)
  */
 static void tty_output_char(char c) {
     tty_t *tty = &console_tty;
@@ -157,11 +161,14 @@ static void tty_output_char(char c) {
             /* Translate NL to CR-NL */
             vga_putc('\r');
             vga_putc('\n');
+            serial_putc(CONSOLE_SERIAL_PORT, '\r');
+            serial_putc(CONSOLE_SERIAL_PORT, '\n');
             return;
         }
     }
 
     vga_putc(c);
+    serial_putc(CONSOLE_SERIAL_PORT, c);  /* Also output to serial */
 }
 
 /*

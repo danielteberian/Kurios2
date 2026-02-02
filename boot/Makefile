@@ -49,9 +49,16 @@ UEFI_LDFLAGS := \
     -Bsymbolic \
     -T $(UEFI_DIR)/uefi.ld
 
-.PHONY: all clean bios uefi
+# Force rebuild of BIOS bootloader when size params change
+# This is necessary because NASM_FLAGS include values not in file deps
+.PHONY: all clean bios uefi bios-force
 
 all: $(BUILD_DIR) bios uefi
+
+# Force rebuild when called with different KERNEL_SIZE/INITRD_SIZE
+bios-force:
+	rm -f $(BIOS_STAGE1) $(BIOS_STAGE2) $(BIOS_BOOT)
+	$(MAKE) bios
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

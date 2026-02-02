@@ -123,7 +123,7 @@ image-bios-initrd: kernel
 	@KERNEL_SIZE=$$(stat -c%s $(BUILD_DIR)/kernel/kernel.bin); \
 	INITRD_SIZE=$$(stat -c%s $(INITRD)); \
 	echo "Building bootloader with KERNEL_SIZE=$$KERNEL_SIZE INITRD_SIZE=$$INITRD_SIZE"; \
-	$(MAKE) -C boot KERNEL_SIZE=$$KERNEL_SIZE INITRD_SIZE=$$INITRD_SIZE
+	$(MAKE) -C boot bios-force KERNEL_SIZE=$$KERNEL_SIZE INITRD_SIZE=$$INITRD_SIZE
 	$(MAKE) INITRD=$(INITRD) _image-bios
 
 # Create BIOS bootable disk image (public, with deps)
@@ -183,7 +183,7 @@ run-shell: shell
 	@KERNEL_SIZE=$$(stat -c%s $(BUILD_DIR)/kernel/kernel.bin); \
 	INITRD_SIZE=$$(stat -c%s $(BUILD_DIR)/userspace/initrd.cpio); \
 	echo "Rebuilding bootloader with KERNEL_SIZE=$$KERNEL_SIZE INITRD_SIZE=$$INITRD_SIZE"; \
-	$(MAKE) -C boot KERNEL_SIZE=$$KERNEL_SIZE INITRD_SIZE=$$INITRD_SIZE
+	$(MAKE) -C boot bios-force KERNEL_SIZE=$$KERNEL_SIZE INITRD_SIZE=$$INITRD_SIZE
 	@echo "Creating disk image with initrd..."
 	@dd if=/dev/zero of=$(BUILD_DIR)/kurios2-bios.img bs=512 count=16384 2>/dev/null
 	@dd if=$(BUILD_DIR)/boot/bios_boot.bin of=$(BUILD_DIR)/kurios2-bios.img conv=notrunc 2>/dev/null

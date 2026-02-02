@@ -61,10 +61,21 @@ int initrd_init(const BootInfo *boot_info)
     initrd_info.phys_base = boot_info->initrd_start;
     initrd_info.size = boot_info->initrd_size;
 
-    /* Map initrd into virtual memory
-     * Identity mapping exists for first 4GB, but we should use proper
-     * kernel virtual addresses. For now, use identity mapping. */
-    initrd_info.virt_base = initrd_info.phys_base;
+    /* Map initrd into virtual memory using the heap
+     * Physical memory is NOT identity mapped in this higher-half kernel.
+     * We allocate from the kernel heap and map the physical pages there. */
+    uint64_t num_pages = (initrd_info.size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    /* Use vmm_map_pages to a region after the kernel heap starts
+     * The slab allocator uses 0xFFFFFFFF88000000+, we'll use 0xFFFFFFFF90200000+ */
+    uint64_t initrd_virt = 0xFFFFFFFF90200000UL;
+
+    if (vmm_map_pages(initrd_virt, initrd_info.phys_base, num_pages,
+                      PTE_PRESENT | PTE_WRITABLE) != 0) {
+        ERROR("initrd: Failed to map %llu pages", num_pages);
+        return -1;
+    }
+    initrd_info.virt_base = initrd_virt;
 
     /* Validate CPIO magic */
     const cpio_header_t *hdr = (const cpio_header_t *)initrd_info.virt_base;

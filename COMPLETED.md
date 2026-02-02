@@ -420,6 +420,15 @@
     mapped virtual memory from the kernel heap
   - Kernel now boots and runs shell without crashes
 
+### Initrd Mapping Bug Fix [FIXED]
+- [2026-02-01] Fixed initrd access in `kernel/initrd/initrd.c`
+  - **Bug:** Initrd physical address (0x20000) was used directly as virtual address
+  - **Problem:** Higher-half kernel has no identity mapping for low physical memory
+  - **Symptom:** "Invalid CPIO magic" error (reading zeros/garbage instead of CPIO header)
+  - **Fix:** Map initrd physical pages to kernel virtual address (0xFFFFFFFF90200000)
+    using vmm_map_pages() before accessing
+  - Shell now loads from initrd correctly
+
 ### Higher-Half Kernel [VERIFIED]
 - [2026-01-24] Updated linker script
   - Kernel virtual base: 0xFFFFFFFF80000000
