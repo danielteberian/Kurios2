@@ -82,33 +82,19 @@ percpu_data_t *percpu_alloc_ap(uint32_t cpu_id, uint8_t apic_id)
         return percpu_array[cpu_id];
     }
 
-    /* Allocate per-CPU data structure
-     * Use page-aligned allocation for better cache behavior */
-    uint64_t pages_needed = (sizeof(percpu_data_t) + 4095) / 4096;
-    uint64_t phys = alloc_pages(0);  /* At least one page */
+    /* Allocate per-CPU data structure from kernel heap
+     * This returns a properly mapped virtual address, unlike alloc_pages()
+     * which returns a physical address that would need manual mapping.
+     *
+     * Note: percpu_data_t is LARGE (~80KB with stacks), so we use kmalloc
+     * which handles large allocations via the slab allocator.
+     */
+    percpu_data_t *percpu = (percpu_data_t *)kmalloc(sizeof(percpu_data_t));
 
-    if (phys == 0) {
+    if (!percpu) {
         ERROR("Per-CPU: Failed to allocate memory for CPU %u", cpu_id);
         return NULL;
     }
-
-    /* We need multiple pages for the large percpu structure */
-    if (pages_needed > 1) {
-        /* Free and allocate larger block */
-        free_page(phys);
-        /* Calculate order for pages_needed */
-        int order = 0;
-        while ((1UL << order) < pages_needed) order++;
-        phys = alloc_pages(order);
-        if (phys == 0) {
-            ERROR("Per-CPU: Failed to allocate %llu pages for CPU %u",
-                  (unsigned long long)pages_needed, cpu_id);
-            return NULL;
-        }
-    }
-
-    /* Use physical address directly (identity mapped in low memory) */
-    percpu_data_t *percpu = (percpu_data_t *)phys;
 
     /* Zero the structure */
     memset(percpu, 0, sizeof(percpu_data_t));

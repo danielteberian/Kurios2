@@ -145,6 +145,123 @@ typedef struct {
 } __attribute__((packed)) Elf64_Shdr;
 
 /*
+ * Dynamic Section Tags
+ */
+#define DT_NULL         0       /* End of dynamic section */
+#define DT_NEEDED       1       /* Name of needed library */
+#define DT_PLTRELSZ     2       /* Size of PLT relocs */
+#define DT_PLTGOT       3       /* Address of PLT/GOT */
+#define DT_HASH         4       /* Address of symbol hash table */
+#define DT_STRTAB       5       /* Address of string table */
+#define DT_SYMTAB       6       /* Address of symbol table */
+#define DT_RELA         7       /* Address of Rela relocs */
+#define DT_RELASZ       8       /* Total size of Rela relocs */
+#define DT_RELAENT      9       /* Size of one Rela reloc */
+#define DT_STRSZ        10      /* Size of string table */
+#define DT_SYMENT       11      /* Size of one symbol table entry */
+#define DT_INIT         12      /* Address of init function */
+#define DT_FINI         13      /* Address of fini function */
+#define DT_SONAME       14      /* Name of shared object */
+#define DT_RPATH        15      /* Library search path (deprecated) */
+#define DT_SYMBOLIC     16      /* Start symbol search here */
+#define DT_REL          17      /* Address of Rel relocs */
+#define DT_RELSZ        18      /* Total size of Rel relocs */
+#define DT_RELENT       19      /* Size of one Rel reloc */
+#define DT_PLTREL       20      /* Type of reloc in PLT */
+#define DT_DEBUG        21      /* For debugging */
+#define DT_TEXTREL      22      /* Reloc might modify .text */
+#define DT_JMPREL       23      /* Address of PLT relocs */
+#define DT_BIND_NOW     24      /* Process relocations now */
+#define DT_INIT_ARRAY   25      /* Array of init functions */
+#define DT_FINI_ARRAY   26      /* Array of fini functions */
+#define DT_INIT_ARRAYSZ 27      /* Size of init array */
+#define DT_FINI_ARRAYSZ 28      /* Size of fini array */
+#define DT_RUNPATH      29      /* Library search path */
+
+/*
+ * ELF64 Dynamic Section Entry
+ */
+typedef struct {
+    int64_t     d_tag;          /* Dynamic entry type */
+    union {
+        uint64_t d_val;         /* Integer value */
+        uint64_t d_ptr;         /* Address value */
+    } d_un;
+} __attribute__((packed)) Elf64_Dyn;
+
+/*
+ * Auxiliary Vector Types
+ * These are passed on the stack to the dynamic linker/program
+ */
+#define AT_NULL         0       /* End of vector */
+#define AT_IGNORE       1       /* Entry should be ignored */
+#define AT_EXECFD       2       /* File descriptor of program */
+#define AT_PHDR         3       /* Program headers for program */
+#define AT_PHENT        4       /* Size of program header entry */
+#define AT_PHNUM        5       /* Number of program headers */
+#define AT_PAGESZ       6       /* System page size */
+#define AT_BASE         7       /* Base address of interpreter */
+#define AT_FLAGS        8       /* Flags */
+#define AT_ENTRY        9       /* Entry point of program */
+#define AT_NOTELF       10      /* Program is not ELF */
+#define AT_UID          11      /* Real UID */
+#define AT_EUID         12      /* Effective UID */
+#define AT_GID          13      /* Real GID */
+#define AT_EGID         14      /* Effective GID */
+#define AT_PLATFORM     15      /* String identifying platform */
+#define AT_HWCAP        16      /* Machine-dependent hints */
+#define AT_CLKTCK       17      /* Frequency of times() */
+#define AT_SECURE       23      /* Secure mode boolean */
+#define AT_RANDOM       25      /* Address of 16 random bytes */
+#define AT_EXECFN       31      /* Filename of executable */
+
+/*
+ * ELF64 Auxiliary Vector Entry
+ */
+typedef struct {
+    uint64_t a_type;            /* Entry type */
+    union {
+        uint64_t a_val;         /* Integer value */
+    } a_un;
+} Elf64_auxv_t;
+
+/*
+ * Relocation Types for x86_64
+ */
+#define R_X86_64_NONE           0   /* No relocation */
+#define R_X86_64_64             1   /* 64-bit absolute */
+#define R_X86_64_PC32           2   /* 32-bit PC-relative */
+#define R_X86_64_GOT32          3   /* 32-bit GOT entry */
+#define R_X86_64_PLT32          4   /* 32-bit PLT address */
+#define R_X86_64_COPY           5   /* Copy symbol at runtime */
+#define R_X86_64_GLOB_DAT       6   /* Create GOT entry */
+#define R_X86_64_JUMP_SLOT      7   /* Create PLT entry */
+#define R_X86_64_RELATIVE       8   /* Adjust by program base */
+#define R_X86_64_GOTPCREL       9   /* 32-bit PC-relative GOT */
+#define R_X86_64_32             10  /* 32-bit absolute */
+#define R_X86_64_32S            11  /* 32-bit sign-extended */
+#define R_X86_64_16             12  /* 16-bit absolute */
+#define R_X86_64_PC16           13  /* 16-bit PC-relative */
+#define R_X86_64_8              14  /* 8-bit absolute */
+#define R_X86_64_PC8            15  /* 8-bit PC-relative */
+
+/*
+ * ELF64 Relocation Entry (with addend)
+ */
+typedef struct {
+    uint64_t    r_offset;       /* Address */
+    uint64_t    r_info;         /* Relocation type and symbol index */
+    int64_t     r_addend;       /* Addend */
+} __attribute__((packed)) Elf64_Rela;
+
+/*
+ * Extract symbol and type from r_info
+ */
+#define ELF64_R_SYM(i)      ((i) >> 32)
+#define ELF64_R_TYPE(i)     ((i) & 0xffffffffL)
+#define ELF64_R_INFO(s,t)   (((s) << 32) + ((t) & 0xffffffffL))
+
+/*
  * Validate ELF header
  * Returns 0 if valid, -1 if invalid
  */

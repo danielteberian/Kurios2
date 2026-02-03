@@ -10,6 +10,7 @@
 #include "../debug/debug.h"
 #include "../arch/x86_64/cpu.h"
 #include "../smp/percpu.h"
+#include "../lib/string.h"
 
 /* Default stack size: 16KB (4 pages) */
 #define DEFAULT_STACK_SIZE  (16 * 1024)
@@ -122,6 +123,7 @@ void thread_init(void) {
     boot_thread->priority = 10;
     boot_thread->cpu_time = 0;
     boot_thread->wake_time = 0;
+    boot_thread->cpu_mask = 0xFFFFFFFF;  /* Allow on all CPUs */
     boot_thread->next = NULL;
     boot_thread->prev = NULL;
     copy_thread_name(boot_thread, "boot");
@@ -144,6 +146,12 @@ void thread_init(void) {
     /* Remove idle from ready queue - it's only used when no other threads ready */
     sched_remove(idle_thread);
     idle_thread->state = THREAD_READY;  /* Keep it ready but not in queue */
+
+    /* Assign idle thread to BSP's percpu structure if percpu is initialized */
+    percpu_data_t *bsp = percpu_get();
+    if (bsp) {
+        bsp->idle_thread = idle_thread;
+    }
 
     initialized = true;
     INFO("Threading initialized: boot thread TID 0, idle thread TID %u",
@@ -201,6 +209,7 @@ thread_t *thread_create(const char *name, thread_entry_t entry, void *arg) {
     thread->priority = 10;  /* Default priority */
     thread->cpu_time = 0;
     thread->wake_time = 0;
+    thread->cpu_mask = 0xFFFFFFFF;  /* Allow on all CPUs by default */
     thread->next = NULL;
     thread->prev = NULL;
     copy_thread_name(thread, name);
@@ -378,7 +387,35 @@ bool thread_is_initialized(void) {
 
 /*
  * Get idle thread (used by scheduler when no other threads are ready)
+ * Returns per-CPU idle thread if SMP is initialized, otherwise global idle
  */
 thread_t *thread_get_idle(void) {
+    if (smp_initialized()) {
+        percpu_data_t *percpu = percpu_get();
+        return percpu ? percpu->idle_thread : idle_thread;
+    }
     return idle_thread;
+}
+
+/*
+ * Create per-CPU idle thread for SMP
+ * Called from sched_init_cpu() during AP initialization
+ */
+thread_t *thread_create_idle(uint32_t cpu_id) {
+    char name[16];
+    snprintf(name, sizeof(name), "idle%u", cpu_id);
+
+    /* Create idle thread */
+    thread_t *idle = thread_create(name, idle_thread_func, NULL);
+    if (!idle) {
+        return NULL;
+    }
+
+    /* Set lowest priority and remove from ready queue */
+    idle->priority = 255;
+    extern void sched_remove(thread_t *thread);
+    sched_remove(idle);
+    idle->state = THREAD_READY;
+
+    return idle;
 }

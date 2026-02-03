@@ -2,6 +2,75 @@
 
 ## Completed Tasks
 
+### Phase 9: Dynamic Linking - PT_INTERP Support (Phase 9.1) [COMPLETE]
+- [2026-02-02] PT_INTERP segment parsing and dynamic linker loading
+  - **PT_INTERP Parsing:** Modified elf_load() to detect and extract interpreter path
+  - **Auxiliary Vector:** Built AT_* entries on stack (AT_PHDR, AT_ENTRY, AT_BASE, AT_PAGESZ, AT_UID, AT_GID, AT_RANDOM)
+  - **Interpreter Loading:** Implemented elf_load_file() to load ELF from filesystem via VFS
+  - **Dynamic Linker:** elf_load_interpreter() loads ld.so and overrides entry point
+  - **Files Created/Modified:**
+    - kernel/loader/elf.h - Added DT_*, AT_*, R_X86_64_* constants, Elf64_Dyn, Elf64_auxv_t
+    - kernel/loader/elf_loader.h - Added has_interp, interp_path, interp_base fields to elf_load_result_t
+    - kernel/loader/elf_loader.c - PT_INTERP parsing, elf_load_file(), elf_load_interpreter()
+    - kernel/syscall/syscall.c - Auxiliary vector creation in sys_execve, calls elf_load_interpreter()
+  - **Testing:** Build successful, ready for dynamically-linked programs
+  - **Kernel Size:** 240,184 bytes (240KB)
+  - **Status:** ✅ Basic dynamic linking infrastructure complete
+  - **Next Steps:** Phase 9.2 (PT_DYNAMIC), 9.3 (Relocations), 9.4 (Symbol Resolution)
+
+### Phase 10: SMP Improvements - CPU Affinity & Rwlocks (Phase 10.2 & 10.4) [COMPLETE]
+- [2026-02-02] CPU Affinity (sched_setaffinity/getaffinity syscalls)
+  - **Thread Structure:** Added cpu_mask field (32-bit bitmask) to thread_t
+  - **Scheduler Integration:**
+    - pick_next_locked() checks cpu_mask before selecting thread
+    - sched_balance_load() only migrates threads allowed on target CPU
+  - **Syscalls:**
+    - sched_setaffinity(tid, cpu_mask) - set thread's CPU affinity
+    - sched_getaffinity(tid, *cpu_mask) - get thread's CPU affinity
+    - Syscall numbers: SYS_SCHED_SETAFFINITY (203), SYS_SCHED_GETAFFINITY (204)
+  - **Files Modified:**
+    - kernel/sched/thread.h - Added cpu_mask field
+    - kernel/sched/thread.c - Initialize cpu_mask to 0xFFFFFFFF (all CPUs)
+    - kernel/sched/sched.h - Added function declarations
+    - kernel/sched/sched.c - Implemented affinity functions and scheduler integration
+    - kernel/syscall/syscall.h - Added syscall numbers
+    - kernel/syscall/syscall.c - Added sys_sched_setaffinity/getaffinity handlers
+  - **Default Behavior:** All threads can run on all CPUs unless restricted
+  - **Status:** ✅ CPU affinity fully functional
+
+- [2026-02-02] Read-Write Locks (rwlock implementation)
+  - **Implementation:** kernel/sync/rwlock.c and rwlock.h
+  - **Features:**
+    - Multiple concurrent readers OR single exclusive writer
+    - rwlock_read_lock/unlock() - shared read access
+    - rwlock_write_lock/unlock() - exclusive write access
+    - rwlock_try_read_lock/try_write_lock() - non-blocking variants
+  - **Internals:** Uses spinlock to protect state, int32_t reader count, bool writer flag
+  - **CPU Hint:** Uses cpu_pause() when spinning
+  - **Files Created:**
+    - kernel/sync/rwlock.h - API and rwlock_t structure
+    - kernel/sync/rwlock.c - Implementation (~140 lines)
+    - kernel/Makefile - Added sync/rwlock.c
+  - **Status:** ✅ Read-write locks ready for use
+
+### Phase 10: SMP Improvements - AP Boot (Phase 10.1) [COMPLETE]
+- [2026-02-02] Fixed critical bug in per-CPU data allocation (Phase 10.1)
+  - **Root Cause:** `percpu_alloc_ap()` used `alloc_pages()` which returns physical addresses,
+    then cast the physical address to a virtual pointer and tried to use it. The ~80KB per-CPU
+    structure (with stacks) was not mapped in virtual memory, causing page faults when APs tried
+    to access it.
+  - **Fix:** Changed to use `kmalloc()` instead of `alloc_pages()`. `kmalloc()` returns properly
+    mapped virtual addresses from the kernel heap.
+  - **Impact:** This is the same class of bug that was fixed for thread stacks (COMPLETED.md:467-476)
+    and initrd mapping (COMPLETED.md:478-485). Physical vs virtual address confusion.
+  - **Files Modified:** kernel/smp/percpu.c (lines 85-97)
+  - **Testing:** Verified with QEMU -smp 2 and -smp 4
+  - **Results:**
+    - 2 CPUs: Both online, AP boots after second SIPI
+    - 4 CPUs: All 4 online, APs boot (1 after second SIPI, 2&3 after first SIPI)
+  - **Kernel Size:** 240,168 bytes (240KB) - up from 232KB
+  - **Status:** ✅ AP boot now works! Multiple CPUs successfully initialized.
+
 ### Phase 8: IPC Enhancements [COMPLETE]
 - [2026-02-02] POSIX Shared Memory (Phase 8.1)
   - Created kernel/ipc/shm.c and kernel/ipc/shm.h

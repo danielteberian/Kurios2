@@ -9,12 +9,19 @@
  * ELF load result structure
  */
 typedef struct {
-    uint64_t entry_point;       /* Program entry point */
+    uint64_t entry_point;       /* Program entry point (or interpreter entry if present) */
     uint64_t base_addr;         /* Lowest loaded address */
     uint64_t end_addr;          /* Highest loaded address */
     uint64_t phdr_addr;         /* Program header address (for aux vector) */
     uint16_t phdr_num;          /* Number of program headers */
     uint16_t phdr_size;         /* Size of each program header */
+
+    /* Dynamic linking support */
+    bool has_interp;            /* True if PT_INTERP segment exists */
+    char interp_path[256];      /* Path to interpreter (e.g., /lib64/ld-linux-x86-64.so.2) */
+    uint64_t interp_base;       /* Base address where interpreter was loaded */
+    uint64_t interp_entry;      /* Entry point of interpreter */
+    uint64_t program_entry;     /* Original program entry point (before interp override) */
 } elf_load_result_t;
 
 /*
@@ -39,6 +46,15 @@ int elf_load(address_space_t *as, const void *elf_data, uint64_t elf_size,
  */
 int elf_load_file(address_space_t *as, const char *path,
                   elf_load_result_t *result);
+
+/*
+ * Load the ELF interpreter (dynamic linker) if PT_INTERP exists
+ *
+ * @param as        Target address space (already has main program loaded)
+ * @param result    ELF load result from main program (will be updated with interp info)
+ * @return 0 on success, negative error code on failure
+ */
+int elf_load_interpreter(address_space_t *as, elf_load_result_t *result);
 
 #ifdef DEBUG_TESTS
 /*

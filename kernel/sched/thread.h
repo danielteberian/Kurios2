@@ -47,6 +47,7 @@ typedef struct thread {
     uint64_t wake_time;             /* Wake time for sleeping threads */
     uint32_t priority;              /* Priority (lower = higher priority) */
     uint64_t cpu_time;              /* CPU time used (ticks) */
+    uint32_t cpu_mask;              /* CPU affinity mask (bit N = allowed on CPU N) */
 
     /* Linked list for scheduler queues */
     struct thread *next;
@@ -82,5 +83,8 @@ thread_t *thread_get(tid_t tid);
 
 /* Check if threading is initialized */
 bool thread_is_initialized(void);
+
+/* Create per-CPU idle thread (for SMP) */
+thread_t *thread_create_idle(uint32_t cpu_id);
 
 #endif /* _SCHED_THREAD_H */

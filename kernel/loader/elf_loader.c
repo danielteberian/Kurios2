@@ -6,6 +6,8 @@
 #include "../mm/vmm.h"
 #include "mm/pmm.h"
 #include "../mm/as.h"
+#include "../mm/slab.h"
+#include "../fs/vfs.h"
 #include "../include/types.h"
 #include "lib/string.h"
 
@@ -128,11 +130,16 @@ int elf_load(address_space_t *as, const void *elf_data, uint64_t elf_size,
 
     /* Initialize result */
     result->entry_point = ehdr->e_entry;
+    result->program_entry = ehdr->e_entry;
     result->base_addr = UINT64_MAX;
     result->end_addr = 0;
     result->phdr_addr = 0;
     result->phdr_num = ehdr->e_phnum;
     result->phdr_size = ehdr->e_phentsize;
+    result->has_interp = false;
+    result->interp_path[0] = '\0';
+    result->interp_base = 0;
+    result->interp_entry = 0;
 
     /* Load each PT_LOAD segment */
     const Elf64_Phdr *phdr_table = (const Elf64_Phdr *)((const uint8_t *)elf_data + ehdr->e_phoff);
@@ -163,6 +170,27 @@ int elf_load(address_space_t *as, const void *elf_data, uint64_t elf_size,
             }
         } else if (phdr->p_type == PT_PHDR) {
             result->phdr_addr = phdr->p_vaddr;
+        } else if (phdr->p_type == PT_INTERP) {
+            /* Extract interpreter path */
+            if (phdr->p_filesz > 0 && phdr->p_filesz < sizeof(result->interp_path)) {
+                const char *interp = (const char *)((const uint8_t *)elf_data + phdr->p_offset);
+                uint64_t len = phdr->p_filesz;
+
+                /* Null-terminate and copy */
+                if (len >= sizeof(result->interp_path)) {
+                    len = sizeof(result->interp_path) - 1;
+                }
+                memcpy(result->interp_path, interp, len);
+                result->interp_path[len] = '\0';
+
+                /* Remove trailing newline if present */
+                if (len > 0 && result->interp_path[len - 1] == '\n') {
+                    result->interp_path[len - 1] = '\0';
+                }
+
+                result->has_interp = true;
+                INFO("PT_INTERP: %s", result->interp_path);
+            }
         }
     }
 
@@ -178,12 +206,91 @@ int elf_load(address_space_t *as, const void *elf_data, uint64_t elf_size,
  */
 int elf_load_file(address_space_t *as, const char *path,
                   elf_load_result_t *result) {
-    /* TODO: Implement file loading via VFS */
-    (void)as;
-    (void)path;
-    (void)result;
-    ERROR("elf_load_file not yet implemented");
-    return -ENOSYS;
+    /* Use VFS to open, stat, and read the file */
+    extern int vfs_open(const char *, uint32_t);
+    extern void vfs_close(int);
+    extern ssize_t vfs_read(int, void *, uint64_t);
+    extern int vfs_fstat(int, vfs_stat_t *);
+
+    /* Open the file */
+    int fd = vfs_open(path, 0);  /* O_RDONLY */
+    if (fd < 0) {
+        ERROR("Failed to open %s: %d", path, fd);
+        return -ENOENT;
+    }
+
+    /* Get file size */
+    vfs_stat_t st;
+    if (vfs_fstat(fd, &st) < 0) {
+        vfs_close(fd);
+        ERROR("Failed to stat %s", path);
+        return -EIO;
+    }
+
+    uint64_t size = st.size;
+    if (size == 0 || size > 16 * 1024 * 1024) {  /* Max 16MB */
+        ERROR("Invalid ELF file size: %llu", size);
+        vfs_close(fd);
+        return -EINVAL;
+    }
+
+    /* Allocate buffer for file */
+    void *buffer = kmalloc(size);
+    if (!buffer) {
+        ERROR("Failed to allocate buffer for %s", path);
+        vfs_close(fd);
+        return -ENOMEM;
+    }
+
+    /* Read entire file into buffer */
+    ssize_t bytes_read = vfs_read(fd, buffer, size);
+    vfs_close(fd);
+
+    if (bytes_read < 0 || (uint64_t)bytes_read != size) {
+        ERROR("Failed to read %s (got %ld bytes)", path, (long)bytes_read);
+        kfree(buffer);
+        return -EIO;
+    }
+
+    /* Load the ELF from buffer */
+    int ret = elf_load(as, buffer, size, result);
+
+    /* Free buffer */
+    kfree(buffer);
+
+    return ret;
+}
+
+/*
+ * Load the ELF interpreter (dynamic linker) if present
+ * This is called after loading the main program
+ */
+int elf_load_interpreter(address_space_t *as, elf_load_result_t *result) {
+    if (!result->has_interp) {
+        return 0;  /* No interpreter needed */
+    }
+
+    INFO("Loading interpreter: %s", result->interp_path);
+
+    /* Load the interpreter ELF */
+    elf_load_result_t interp_result;
+    int ret = elf_load_file(as, result->interp_path, &interp_result);
+    if (ret < 0) {
+        ERROR("Failed to load interpreter %s: %d", result->interp_path, ret);
+        return ret;
+    }
+
+    /* Update result with interpreter info */
+    result->interp_base = interp_result.base_addr;
+    result->interp_entry = interp_result.entry_point;
+
+    /* Override entry point to point to interpreter */
+    result->entry_point = interp_result.entry_point;
+
+    INFO("Interpreter loaded: base=0x%llx, entry=0x%llx",
+         result->interp_base, result->interp_entry);
+
+    return 0;
 }
 
 #ifdef DEBUG_TESTS

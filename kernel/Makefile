@@ -49,6 +49,7 @@ C_SOURCES := \
     drivers/partition.c \
     sched/thread.c \
     sched/sched.c \
+    sync/rwlock.c \
     process/process.c \
     process/pgrp.c \
     syscall/syscall.c \

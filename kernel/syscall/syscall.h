@@ -122,6 +122,10 @@
 #define SYS_MQ_NOTIFY     244
 #define SYS_MQ_GETSETATTR 245
 
+/* Scheduler - CPU Affinity */
+#define SYS_SCHED_SETAFFINITY 203
+#define SYS_SCHED_GETAFFINITY 204
+
 /* File type bits for mknod mode */
 #define S_IFMT      0170000     /* File type mask */
 #define S_IFSOCK    0140000     /* Socket */

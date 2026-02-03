@@ -31,6 +31,16 @@ void sched_reschedule(void);
 /* Check if scheduler is running */
 bool sched_is_running(void);
 
+/* Load balancing - migrate threads between CPUs */
+void sched_balance_load(void);
+
+/* Get queue length for a CPU (0 = current CPU) */
+uint32_t sched_queue_length(uint32_t cpu_id);
+
+/* CPU affinity - set/get which CPUs a thread can run on */
+int sched_setaffinity(tid_t tid, uint32_t cpu_mask);
+int sched_getaffinity(tid_t tid, uint32_t *cpu_mask);
+
 /* Context switch to thread (assembly) */
 extern void context_switch(uint64_t *old_rsp, uint64_t new_rsp);
 

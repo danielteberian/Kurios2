@@ -13,6 +13,7 @@
 #include "../sched/sched.h"
 #include "../sched/thread.h"
 #include "../loader/elf_loader.h"
+#include "../loader/elf.h"
 #include "../fs/vfs.h"
 #include "../fs/fd_table.h"
 #include "../fs/pipe.h"
@@ -2013,6 +2014,80 @@ static int64_t sys_sched_yield(uint64_t arg1, uint64_t arg2, uint64_t arg3,
     return 0;
 }
 
+/*
+ * sys_sched_setaffinity - set CPU affinity for a thread
+ */
+static int64_t sys_sched_setaffinity(uint64_t pid, uint64_t cpusetsize,
+                                     uint64_t mask_ptr, uint64_t arg4,
+                                     uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    /* For simplicity, we only support 4 bytes (32 CPUs) */
+    if (cpusetsize < 4) {
+        return -EINVAL;
+    }
+
+    /* Copy mask from user space */
+    uint32_t cpu_mask;
+    if (!copy_from_user(&cpu_mask, (void *)mask_ptr, sizeof(cpu_mask))) {
+        return -EFAULT;
+    }
+
+    /* If pid is 0, use current thread */
+    tid_t tid;
+    if (pid == 0) {
+        thread_t *current = thread_current();
+        if (!current) return -ESRCH;
+        tid = current->tid;
+    } else {
+        /* For threads, pid == tid in our kernel */
+        tid = (tid_t)pid;
+    }
+
+    /* Call scheduler function */
+    return sched_setaffinity(tid, cpu_mask);
+}
+
+/*
+ * sys_sched_getaffinity - get CPU affinity for a thread
+ */
+static int64_t sys_sched_getaffinity(uint64_t pid, uint64_t cpusetsize,
+                                     uint64_t mask_ptr, uint64_t arg4,
+                                     uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    /* For simplicity, we only support 4 bytes (32 CPUs) */
+    if (cpusetsize < 4) {
+        return -EINVAL;
+    }
+
+    /* If pid is 0, use current thread */
+    tid_t tid;
+    if (pid == 0) {
+        thread_t *current = thread_current();
+        if (!current) return -ESRCH;
+        tid = current->tid;
+    } else {
+        /* For threads, pid == tid in our kernel */
+        tid = (tid_t)pid;
+    }
+
+    /* Get affinity from scheduler */
+    uint32_t cpu_mask;
+    int ret = sched_getaffinity(tid, &cpu_mask);
+    if (ret < 0) {
+        return ret;
+    }
+
+    /* Copy mask to user space */
+    if (!copy_to_user((void *)mask_ptr, &cpu_mask, sizeof(cpu_mask))) {
+        return -EFAULT;
+    }
+
+    /* Return size of mask in bytes */
+    return sizeof(cpu_mask);
+}
+
 /* ============================================================================
  * NEW SYSCALLS - Process/User Identity
  * ============================================================================ */
@@ -3252,6 +3327,17 @@ static int64_t sys_execve_impl(syscall_frame_t *frame) {
     }
 
     /*
+     * Step 2b: Load interpreter (dynamic linker) if needed
+     */
+    extern int elf_load_interpreter(address_space_t *, elf_load_result_t *);
+    ret = elf_load_interpreter(new_as, &elf_result);
+    if (ret < 0) {
+        as_destroy(new_as);
+        ERROR("sys_execve: failed to load interpreter: %d", ret);
+        return -ENOEXEC;
+    }
+
+    /*
      * Step 3: Set up user stack
      */
     uint64_t stack_bottom = USER_STACK_TOP_EXEC - (USER_STACK_PAGES * PAGE_SIZE);
@@ -3275,6 +3361,61 @@ static int64_t sys_execve_impl(syscall_frame_t *frame) {
 
     /* Stack pointer starts at top, grows down */
     uint64_t sp = USER_STACK_TOP_EXEC;
+
+    /*
+     * Stack layout (grows downward):
+     * [high] NULL terminator for envp
+     *        NULL terminator for argv
+     *        argc
+     *        Auxiliary vector (AT_* entries, terminated by AT_NULL)
+     * [low]  <-- RSP
+     */
+
+    /* Push 16 random bytes for AT_RANDOM (for stack canary, ASLR, etc.) */
+    /* Use simple PRNG based on PIT ticks and process ID */
+    extern uint64_t pit_get_ticks(void);
+    static uint64_t rand_state = 0x123456789ABCDEFULL;
+    uint64_t ticks = pit_get_ticks();
+    rand_state ^= ticks;
+    rand_state ^= (uint64_t)proc->pid << 32;
+    rand_state = rand_state * 6364136223846793005ULL + 1442695040888963407ULL;  /* LCG */
+
+    sp -= 16;
+    uint64_t *random_bytes = (uint64_t *)sp;
+    random_bytes[0] = rand_state;
+    rand_state = rand_state * 6364136223846793005ULL + 1442695040888963407ULL;
+    random_bytes[1] = rand_state;
+    uint64_t random_ptr = sp;
+
+    /* Align to 16 bytes for auxiliary vector */
+    sp = (sp & ~15ULL);
+
+    /* Build auxiliary vector (pushed in reverse order, terminated by AT_NULL) */
+    #define PUSH_AUXV(type, val) do { \
+        sp -= 16; \
+        ((uint64_t *)sp)[0] = (type); \
+        ((uint64_t *)sp)[1] = (uint64_t)(val); \
+    } while(0)
+
+    PUSH_AUXV(AT_NULL, 0);               /* Terminator */
+    PUSH_AUXV(AT_RANDOM, random_ptr);    /* 16 random bytes */
+    PUSH_AUXV(AT_SECURE, 0);             /* Not secure mode */
+    PUSH_AUXV(AT_EGID, proc->egid);      /* Effective GID */
+    PUSH_AUXV(AT_GID, proc->gid);        /* Real GID */
+    PUSH_AUXV(AT_EUID, proc->euid);      /* Effective UID */
+    PUSH_AUXV(AT_UID, proc->uid);        /* Real UID */
+    PUSH_AUXV(AT_ENTRY, elf_result.program_entry);  /* Program entry point */
+    if (elf_result.has_interp) {
+        PUSH_AUXV(AT_BASE, elf_result.interp_base);  /* Interpreter base */
+    } else {
+        PUSH_AUXV(AT_BASE, 0);           /* No interpreter */
+    }
+    PUSH_AUXV(AT_PAGESZ, PAGE_SIZE);     /* Page size (4096) */
+    PUSH_AUXV(AT_PHNUM, elf_result.phdr_num);   /* Number of program headers */
+    PUSH_AUXV(AT_PHENT, elf_result.phdr_size);  /* Size of program header */
+    PUSH_AUXV(AT_PHDR, elf_result.phdr_addr);   /* Address of program headers */
+
+    #undef PUSH_AUXV
 
     /* Push NULL for envp terminator */
     sp -= 8;
@@ -3827,6 +3968,8 @@ void syscall_init(void) {
     syscall_register(SYS_MQ_TIMEDRECEIVE, sys_mq_timedreceive);
     syscall_register(SYS_MQ_GETSETATTR, sys_mq_getsetattr);
     syscall_register(SYS_SCHED_YIELD, sys_sched_yield);
+    syscall_register(SYS_SCHED_SETAFFINITY, sys_sched_setaffinity);
+    syscall_register(SYS_SCHED_GETAFFINITY, sys_sched_getaffinity);
     syscall_register(SYS_DUP, sys_dup);
     syscall_register(SYS_DUP2, sys_dup2);
     syscall_register(SYS_FCNTL, sys_fcntl);

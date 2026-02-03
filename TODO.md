@@ -364,9 +364,9 @@
 
 ## Phase 10: SMP Improvements
 
-### 10.1 AP Boot
-- [ ] Debug and fix AP startup (currently hangs after SIPI)
-- [ ] AP enters long mode and runs scheduler
+### 10.1 AP Boot [x]
+- [x] Debug and fix AP startup (currently hangs after SIPI)
+- [x] AP enters long mode and runs scheduler
 - [ ] Per-CPU idle threads
 - [ ] CPU hotplug (optional)
 
