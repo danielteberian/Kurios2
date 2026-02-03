@@ -62,6 +62,8 @@ C_SOURCES := \
     smp/tlb.c \
     signal/signal.c \
     ipc/shm.c \
+    ipc/sem.c \
+    ipc/mqueue.c \
     net/netdev.c \
     net/ip.c \
     net/icmp.c \

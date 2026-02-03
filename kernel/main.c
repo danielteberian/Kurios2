@@ -40,6 +40,9 @@
 #include "net/netdev.h"
 #include "net/socket.h"
 #include "net/tcp.h"
+#include "ipc/shm.h"
+#include "ipc/sem.h"
+#include "ipc/mqueue.h"
 #include "lib/string.h"
 #include "boot_info.h"
 
@@ -614,6 +617,15 @@ void kernel_main(BootInfo *boot_info) {
     } else {
         WARN("Failed to mount procfs");
     }
+
+    /* Initialize POSIX shared memory (/dev/shm) */
+    shm_init();
+
+    /* Initialize POSIX semaphores */
+    sem_init_subsystem();
+
+    /* Initialize POSIX message queues */
+    mq_init_subsystem();
 
 #ifdef DEBUG_TESTS
     /* Run initrd tests */

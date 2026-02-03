@@ -1,6 +1,7 @@
 /* socket.c - Socket Implementation */
 
 #include "socket.h"
+#include "unix_socket.h"
 #include "udp.h"
 #include "tcp.h"
 #include "ip.h"
@@ -22,6 +23,7 @@ static uint16_t next_ephemeral_port = 32768;
 void socket_init(void) {
     memset(sockets, 0, sizeof(sockets));
     spin_init(&socket_table_lock);
+    unix_socket_init();
 }
 
 /*
@@ -53,21 +55,31 @@ socket_t *socket_create(int domain, int type) {
     sock->listening = false;
     spin_init(&sock->lock);
 
-    if (type == SOCK_STREAM) {
-        /* Create TCP connection */
-        sock->tcp_conn = tcp_connection_create();
-        if (!sock->tcp_conn) {
+    /* Domain-specific initialization */
+    if (domain == AF_UNIX) {
+        /* Create Unix socket */
+        sock->unix_sock = unix_socket_create(type);
+        if (!sock->unix_sock) {
             kfree(sock);
             return NULL;
         }
-    } else {
-        /* Allocate receive buffer for UDP */
-        sock->recv_buf = kmalloc(sizeof(socket_recv_buf_t));
-        if (!sock->recv_buf) {
-            kfree(sock);
-            return NULL;
+    } else if (domain == AF_INET) {
+        if (type == SOCK_STREAM) {
+            /* Create TCP connection */
+            sock->tcp_conn = tcp_connection_create();
+            if (!sock->tcp_conn) {
+                kfree(sock);
+                return NULL;
+            }
+        } else {
+            /* Allocate receive buffer for UDP */
+            sock->recv_buf = kmalloc(sizeof(socket_recv_buf_t));
+            if (!sock->recv_buf) {
+                kfree(sock);
+                return NULL;
+            }
+            memset(sock->recv_buf, 0, sizeof(socket_recv_buf_t));
         }
-        memset(sock->recv_buf, 0, sizeof(socket_recv_buf_t));
     }
 
     /* Add to socket table */
@@ -102,6 +114,11 @@ void socket_destroy(socket_t *sock) {
         }
     }
     spin_unlock_irqrestore(&socket_table_lock, flags);
+
+    /* Clean up Unix socket */
+    if (sock->unix_sock) {
+        unix_socket_destroy(sock->unix_sock);
+    }
 
     /* Clean up TCP connection */
     if (sock->tcp_conn) {
@@ -183,6 +200,13 @@ int socket_listen(socket_t *sock, int backlog) {
         return -22;
     }
 
+    /* AF_UNIX path */
+    if (sock->domain == AF_UNIX) {
+        if (!sock->unix_sock) return -22;
+        return unix_socket_listen(sock->unix_sock, backlog);
+    }
+
+    /* AF_INET path */
     uint64_t flags = spin_lock_irqsave(&sock->lock);
 
     if (!sock->tcp_conn) {
@@ -209,6 +233,46 @@ socket_t *socket_accept(socket_t *sock) {
         return NULL;
     }
 
+    /* AF_UNIX path */
+    if (sock->domain == AF_UNIX) {
+        if (!sock->unix_sock) return NULL;
+
+        unix_socket_t *new_unix = unix_socket_accept(sock->unix_sock);
+        if (!new_unix) return NULL;
+
+        /* Create wrapper socket */
+        socket_t *new_sock = kmalloc(sizeof(socket_t));
+        if (!new_sock) {
+            unix_socket_destroy(new_unix);
+            return NULL;
+        }
+
+        memset(new_sock, 0, sizeof(socket_t));
+        new_sock->domain = AF_UNIX;
+        new_sock->type = SOCK_STREAM;
+        new_sock->bound = true;
+        new_sock->connected = true;
+        new_sock->unix_sock = new_unix;
+        spin_init(&new_sock->lock);
+
+        /* Add to socket table */
+        uint64_t flags = spin_lock_irqsave(&socket_table_lock);
+        for (int i = 0; i < MAX_SOCKETS; i++) {
+            if (!sockets[i]) {
+                sockets[i] = new_sock;
+                spin_unlock_irqrestore(&socket_table_lock, flags);
+                return new_sock;
+            }
+        }
+        spin_unlock_irqrestore(&socket_table_lock, flags);
+
+        /* No free slots */
+        unix_socket_destroy(new_unix);
+        kfree(new_sock);
+        return NULL;
+    }
+
+    /* AF_INET path */
     /* Try to accept a connection */
     tcp_connection_t *new_conn = tcp_accept(sock->tcp_conn);
     if (!new_conn) {
@@ -223,6 +287,7 @@ socket_t *socket_accept(socket_t *sock) {
     }
 
     memset(new_sock, 0, sizeof(socket_t));
+    new_sock->domain = AF_INET;
     new_sock->type = SOCK_STREAM;
     new_sock->local_ip = new_conn->local_ip;
     new_sock->local_port = new_conn->local_port;
@@ -377,4 +442,36 @@ int socket_udp_deliver(uint16_t port, uint32_t src_ip, uint16_t src_port,
     spin_unlock_irqrestore(&socket_table_lock, flags);
     DEBUG("UDP: No socket listening on port %u", port);
     return -111;  /* ECONNREFUSED */
+}
+
+/*
+ * Bind Unix socket to path
+ */
+int socket_bind_unix(socket_t *sock, const char *path) {
+    if (!sock || !sock->unix_sock) return -22;
+    return unix_socket_bind(sock->unix_sock, path);
+}
+
+/*
+ * Connect Unix socket to path
+ */
+int socket_connect_unix(socket_t *sock, const char *path) {
+    if (!sock || !sock->unix_sock) return -22;
+    return unix_socket_connect(sock->unix_sock, path);
+}
+
+/*
+ * Send data via Unix socket
+ */
+int socket_sendto_unix(socket_t *sock, const void *buf, size_t len, const char *dest_path) {
+    if (!sock || !sock->unix_sock) return -22;
+    return unix_socket_sendto(sock->unix_sock, buf, len, dest_path);
+}
+
+/*
+ * Receive data from Unix socket
+ */
+ssize_t socket_recvfrom_unix(socket_t *sock, void *buf, size_t len, char *src_path) {
+    if (!sock || !sock->unix_sock) return -22;
+    return unix_socket_recvfrom(sock->unix_sock, buf, len, src_path);
 }

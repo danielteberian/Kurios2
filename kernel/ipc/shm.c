@@ -287,3 +287,50 @@ int shm_resize(shm_object_t *shm, size_t new_size) {
     /* Allocate memory for the first time */
     return shm_alloc_memory(shm, new_size);
 }
+
+/*
+ * Syscall wrapper for shm_open
+ * Creates/opens a shared memory object and returns a file descriptor
+ */
+int shm_open_syscall(const char *name, int oflag, mode_t mode) {
+    /* Open the shared memory object */
+    shm_object_t *shm = shm_open_internal(name, oflag, mode);
+    if (!shm) {
+        return -2;  /* ENOENT or other error */
+    }
+
+    /* For now, return a fake fd. In a full implementation, this would:
+     * 1. Create a VFS node for the shm object
+     * 2. Allocate a file descriptor
+     * 3. Associate the fd with the shm object
+     * For simplicity, we'll just store the shm pointer in a static array
+     * and return an index as the fd.
+     */
+
+    /* FIXME: This is a simplified implementation. A proper implementation
+     * would integrate with the VFS and fd_table system. */
+    static shm_object_t *shm_fd_table[64];
+    static spinlock_t shm_fd_lock = SPINLOCK_INIT;
+
+    uint64_t flags = spin_lock_irqsave(&shm_fd_lock);
+    for (int i = 0; i < 64; i++) {
+        if (!shm_fd_table[i]) {
+            shm_fd_table[i] = shm;
+            shm->fd = i + 1000;  /* Offset to avoid collision with regular fds */
+            spin_unlock_irqrestore(&shm_fd_lock, flags);
+            return shm->fd;
+        }
+    }
+    spin_unlock_irqrestore(&shm_fd_lock, flags);
+
+    /* No free slots */
+    shm_unref(shm);
+    return -24;  /* EMFILE */
+}
+
+/*
+ * Syscall wrapper for shm_unlink
+ */
+int shm_unlink_syscall(const char *name) {
+    return shm_unlink_internal(name);
+}

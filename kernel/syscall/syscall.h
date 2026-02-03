@@ -101,6 +101,27 @@
 #define SYS_CLOCK_GETRES  229
 #define SYS_GETRANDOM     318
 
+/* IPC - POSIX Shared Memory */
+#define SYS_SHM_OPEN      29
+#define SYS_SHM_UNLINK    30
+
+/* IPC - POSIX Semaphores */
+#define SYS_SEM_OPEN      269
+#define SYS_SEM_CLOSE     270
+#define SYS_SEM_UNLINK    271
+#define SYS_SEM_WAIT      272
+#define SYS_SEM_POST      273
+#define SYS_SEM_TRYWAIT   274
+#define SYS_SEM_GETVALUE  275
+
+/* IPC - POSIX Message Queues */
+#define SYS_MQ_OPEN       240
+#define SYS_MQ_UNLINK     241
+#define SYS_MQ_TIMEDSEND  242
+#define SYS_MQ_TIMEDRECEIVE 243
+#define SYS_MQ_NOTIFY     244
+#define SYS_MQ_GETSETATTR 245
+
 /* File type bits for mknod mode */
 #define S_IFMT      0170000     /* File type mask */
 #define S_IFSOCK    0140000     /* Socket */

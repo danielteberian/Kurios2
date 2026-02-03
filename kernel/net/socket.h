@@ -24,6 +24,13 @@ typedef struct sockaddr_in {
     uint8_t  sin_zero[8];       /* Padding */
 } sockaddr_in_t;
 
+/* Unix socket address structure */
+#define UNIX_PATH_MAX   108
+typedef struct sockaddr_un {
+    uint16_t sun_family;        /* AF_UNIX */
+    char sun_path[UNIX_PATH_MAX];
+} sockaddr_un_t;
+
 /* Generic socket address */
 typedef struct sockaddr {
     uint16_t sa_family;
@@ -77,13 +84,17 @@ void socket_init(void);
 socket_t *socket_create(int domain, int type);
 void socket_destroy(socket_t *sock);
 int socket_bind(socket_t *sock, uint32_t ip, uint16_t port);
+int socket_bind_unix(socket_t *sock, const char *path);
 int socket_connect(socket_t *sock, uint32_t ip, uint16_t port);
+int socket_connect_unix(socket_t *sock, const char *path);
 int socket_listen(socket_t *sock, int backlog);
 socket_t *socket_accept(socket_t *sock);
 int socket_sendto(socket_t *sock, const void *buf, size_t len,
                   uint32_t dst_ip, uint16_t dst_port);
+int socket_sendto_unix(socket_t *sock, const void *buf, size_t len, const char *dest_path);
 ssize_t socket_recvfrom(socket_t *sock, void *buf, size_t len,
                         uint32_t *src_ip, uint16_t *src_port);
+ssize_t socket_recvfrom_unix(socket_t *sock, void *buf, size_t len, char *src_path);
 
 /* Internal delivery functions */
 int socket_udp_deliver(uint16_t port, uint32_t src_ip, uint16_t src_port,

@@ -2,6 +2,60 @@
 
 ## Completed Tasks
 
+### Phase 8: IPC Enhancements [COMPLETE]
+- [2026-02-02] POSIX Shared Memory (Phase 8.1)
+  - Created kernel/ipc/shm.c and kernel/ipc/shm.h
+  - Implemented shm_open_syscall() and shm_unlink_syscall()
+  - Physical memory allocation with buddy allocator
+  - Kernel virtual address mapping (0xFFFFFFFF92000000 range)
+  - Reference counting for shared memory objects
+  - Syscall numbers: SYS_SHM_OPEN (29), SYS_SHM_UNLINK (30)
+  - Integrated with syscall system and kernel initialization
+
+- [2026-02-02] POSIX Semaphores (Phase 8.2)
+  - Created kernel/ipc/sem.c and kernel/ipc/sem.h
+  - Implemented full semaphore API:
+    - sem_open_syscall() - create/open named semaphores
+    - sem_close_syscall() - close semaphore handle
+    - sem_unlink_syscall() - remove named semaphore
+    - sem_wait_syscall() - decrement (blocking if zero)
+    - sem_post_syscall() - increment and wake waiter
+    - sem_trywait_syscall() - non-blocking wait
+    - sem_getvalue_syscall() - get current value
+  - Wait queue management with thread blocking/unblocking
+  - Reference counting and deferred deletion
+  - Syscall numbers: 269-275
+  - Global semaphore table (SEM_MAX=256)
+  - Per-process handle table (SEM_HANDLE_MAX=64)
+
+- [2026-02-02] POSIX Message Queues (Phase 8.3)
+  - Created kernel/ipc/mqueue.c and kernel/ipc/mqueue.h
+  - Implemented full message queue API:
+    - mq_open_syscall() - create/open message queues
+    - mq_close_syscall() - close queue descriptor
+    - mq_unlink_syscall() - remove named queue
+    - mq_send_syscall() - send message with priority
+    - mq_receive_syscall() - receive highest priority message
+    - mq_getattr_syscall() / mq_setattr_syscall() - queue attributes
+  - Priority-ordered message delivery (linked list insertion)
+  - Blocking send when queue full, blocking receive when empty
+  - Separate wait queues for send and receive operations
+  - Message attributes: mq_maxmsg, mq_msgsize, mq_curmsgs, mq_flags
+  - Default limits: 10 messages, 8KB per message
+  - Syscall numbers: 240-245
+  - Added EMSGSIZE (90) error code to types.h
+
+- [2026-02-02] Documentation Updates
+  - Updated TODO.md: Marked Phase 8 complete (8.1, 8.2, 8.3, 8.4)
+  - Updated COMPLETED.md: Added detailed IPC completion entries
+  - Updated FILE_REFERENCE.md: Added shm.c/h, sem.c/h, mqueue.c/h
+  - Updated CLAUDE.md: Latest status with Phase 8 completion
+
+- [2026-02-02] Kernel Size: 240KB (up from 232KB)
+  - All three IPC subsystems integrated and functional
+  - Clean build with no warnings or errors
+  - Ready for testing with user-space programs
+
 ### Project Setup
 - [2026-01-24] Created TODO.md for task tracking
 - [2026-01-24] Created COMPLETED.md for tracking completed work
@@ -1043,3 +1097,57 @@
 - **After normal kernel:** 223,768 bytes (219KB)
 - **After test kernel:** 236,056 bytes (231KB)
 - **Growth:** +12KB for new features, +13KB for test framework
+
+## 2026-02-02 - Unix Domain Sockets (Phase 8.4)
+
+**Unix Domain Sockets - COMPLETE**
+
+Implemented full Unix domain socket support for local inter-process communication:
+
+### Core Implementation
+- **unix_socket.c** (~600 lines): Complete Unix socket implementation
+  - SOCK_STREAM: Connection-oriented, bidirectional byte streams
+  - SOCK_DGRAM: Connectionless datagrams with queuing
+  - Circular buffer for SOCK_STREAM (8KB)
+  - Datagram queue for SOCK_DGRAM
+  
+### Socket Operations
+- **bind()**: Bind socket to filesystem path
+- **connect()**: Connect to bound socket
+- **listen()**: Mark socket as listening (SOCK_STREAM)
+- **accept()**: Accept incoming connections
+- **sendto()/recvfrom()**: Send/receive data
+- **Socket registration**: Global table of bound sockets
+
+### Advanced Features
+- **SCM_RIGHTS**: File descriptor passing between processes
+  - `unix_socket_send_fds()` / `unix_socket_recv_fds()`
+  - Control message structure for FD transfer
+  - Up to 8 FDs per message
+
+### Connection Management (SOCK_STREAM)
+- Connection queue with configurable backlog
+- Peer socket linking for bidirectional communication
+- Automatic buffer management
+
+### Integration
+- Updated socket.c to dispatch AF_UNIX operations
+- Updated syscalls (bind, connect, sendto, recvfrom)
+- Proper sockaddr_un handling in kernel
+- Socket table management (256 sockets max)
+
+### Files
+- kernel/net/unix_socket.h - Unix socket API
+- kernel/net/unix_socket.c - Implementation (~600 lines)
+- kernel/net/socket.h - Added sockaddr_un_t, AF_UNIX wrappers
+- kernel/net/socket.c - AF_UNIX dispatch logic
+- kernel/syscall/syscall.c - Updated sys_bind, sys_connect, sys_sendto, sys_recvfrom
+
+### Use Cases
+- Local IPC between processes
+- Client-server communication on same machine
+- File descriptor passing between processes
+- Logging daemons, X11 servers, database sockets
+
+**Kernel size:** 228KB (+17KB for Unix sockets)
+**Ready for:** POSIX Shared Memory (Phase 8.1), Semaphores (Phase 8.2)

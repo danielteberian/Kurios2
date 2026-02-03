@@ -113,5 +113,6 @@ extern void call_global_destructors(void);
 #define ELOOP           40      /* Too many symbolic links */
 #define EWOULDBLOCK     EAGAIN  /* Operation would block */
 #define ENAMETOOLONG    36      /* File name too long */
+#define EMSGSIZE        90      /* Message too long */
 
 #endif /* _KERNEL_TYPES_H */

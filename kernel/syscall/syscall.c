@@ -2639,6 +2639,155 @@ static int64_t sys_pipe(uint64_t pipefd, uint64_t arg2, uint64_t arg3,
 }
 
 /*
+ * sys_shm_open - open a POSIX shared memory object
+ */
+static int64_t sys_shm_open(uint64_t name_ptr, uint64_t oflag, uint64_t mode,
+                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    /* Validate user pointer */
+    if (!access_ok((void *)name_ptr, 1)) {
+        return -EFAULT;
+    }
+
+    const char *name = (const char *)name_ptr;
+
+    /* Validate name string (check first few bytes) */
+    if (!access_ok((void *)name, 256)) {
+        return -EFAULT;
+    }
+
+    /* Call shared memory implementation */
+    extern int shm_open_syscall(const char *name, int oflag, mode_t mode);
+    return shm_open_syscall(name, (int)oflag, (mode_t)mode);
+}
+
+/*
+ * sys_shm_unlink - remove a POSIX shared memory object
+ */
+static int64_t sys_shm_unlink(uint64_t name_ptr, uint64_t arg2, uint64_t arg3,
+                              uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    /* Validate user pointer */
+    if (!access_ok((void *)name_ptr, 1)) {
+        return -EFAULT;
+    }
+
+    const char *name = (const char *)name_ptr;
+
+    /* Validate name string (check first few bytes) */
+    if (!access_ok((void *)name, 256)) {
+        return -EFAULT;
+    }
+
+    /* Call shared memory implementation */
+    extern int shm_unlink_syscall(const char *name);
+    return shm_unlink_syscall(name);
+}
+
+/*
+ * sys_sem_open - open a POSIX semaphore
+ */
+static int64_t sys_sem_open(uint64_t name_ptr, uint64_t oflag, uint64_t mode,
+                            uint64_t value, uint64_t arg5, uint64_t arg6) {
+    (void)arg5; (void)arg6;
+
+    if (!access_ok((void *)name_ptr, 1)) {
+        return -EFAULT;
+    }
+
+    const char *name = (const char *)name_ptr;
+    if (!access_ok((void *)name, 256)) {
+        return -EFAULT;
+    }
+
+    extern int sem_open_syscall(const char *name, int oflag, mode_t mode, unsigned int value);
+    return sem_open_syscall(name, (int)oflag, (mode_t)mode, (unsigned int)value);
+}
+
+/*
+ * sys_sem_close - close a semaphore
+ */
+static int64_t sys_sem_close(uint64_t sem_id, uint64_t arg2, uint64_t arg3,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    extern int sem_close_syscall(int sem_id);
+    return sem_close_syscall((int)sem_id);
+}
+
+/*
+ * sys_sem_unlink - remove a named semaphore
+ */
+static int64_t sys_sem_unlink(uint64_t name_ptr, uint64_t arg2, uint64_t arg3,
+                              uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (!access_ok((void *)name_ptr, 1)) {
+        return -EFAULT;
+    }
+
+    const char *name = (const char *)name_ptr;
+    if (!access_ok((void *)name, 256)) {
+        return -EFAULT;
+    }
+
+    extern int sem_unlink_syscall(const char *name);
+    return sem_unlink_syscall(name);
+}
+
+/*
+ * sys_sem_wait - wait on a semaphore
+ */
+static int64_t sys_sem_wait(uint64_t sem_id, uint64_t arg2, uint64_t arg3,
+                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    extern int sem_wait_syscall(int sem_id);
+    return sem_wait_syscall((int)sem_id);
+}
+
+/*
+ * sys_sem_post - post to a semaphore
+ */
+static int64_t sys_sem_post(uint64_t sem_id, uint64_t arg2, uint64_t arg3,
+                            uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    extern int sem_post_syscall(int sem_id);
+    return sem_post_syscall((int)sem_id);
+}
+
+/*
+ * sys_sem_trywait - try to wait on a semaphore (non-blocking)
+ */
+static int64_t sys_sem_trywait(uint64_t sem_id, uint64_t arg2, uint64_t arg3,
+                               uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    extern int sem_trywait_syscall(int sem_id);
+    return sem_trywait_syscall((int)sem_id);
+}
+
+/*
+ * sys_sem_getvalue - get semaphore value
+ */
+static int64_t sys_sem_getvalue(uint64_t sem_id, uint64_t sval_ptr, uint64_t arg3,
+                                uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (!access_ok((void *)sval_ptr, sizeof(int))) {
+        return -EFAULT;
+    }
+
+    int *sval = (int *)sval_ptr;
+
+    extern int sem_getvalue_syscall(int sem_id, int *sval);
+    return sem_getvalue_syscall((int)sem_id, sval);
+}
+
+/*
  * sys_syslog - read/control kernel log (stub)
  */
 static int64_t sys_syslog(uint64_t type, uint64_t bufp, uint64_t len,
@@ -2653,6 +2802,124 @@ static int64_t sys_syslog(uint64_t type, uint64_t bufp, uint64_t len,
         return 16384;  /* Return a reasonable buffer size */
     default:
         return -EINVAL;
+    }
+}
+
+/*
+ * sys_mq_open - open a POSIX message queue
+ */
+static int64_t sys_mq_open(uint64_t name_ptr, uint64_t oflag, uint64_t mode,
+                           uint64_t attr_ptr, uint64_t arg5, uint64_t arg6) {
+    (void)arg5; (void)arg6;
+
+    if (!access_ok((void *)name_ptr, 1)) {
+        return -EFAULT;
+    }
+
+    const char *name = (const char *)name_ptr;
+    if (!access_ok((void *)name, 256)) {
+        return -EFAULT;
+    }
+
+    /* mq_attr is optional */
+    void *attr = NULL;
+    if (attr_ptr && access_ok((void *)attr_ptr, sizeof(void *))) {
+        attr = (void *)attr_ptr;
+    }
+
+    extern int mq_open_syscall(const char *name, int oflag, mode_t mode, void *attr);
+    return mq_open_syscall(name, (int)oflag, (mode_t)mode, attr);
+}
+
+/*
+ * sys_mq_unlink - remove a POSIX message queue
+ */
+static int64_t sys_mq_unlink(uint64_t name_ptr, uint64_t arg2, uint64_t arg3,
+                             uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg2; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    if (!access_ok((void *)name_ptr, 1)) {
+        return -EFAULT;
+    }
+
+    const char *name = (const char *)name_ptr;
+    if (!access_ok((void *)name, 256)) {
+        return -EFAULT;
+    }
+
+    extern int mq_unlink_syscall(const char *name);
+    return mq_unlink_syscall(name);
+}
+
+/*
+ * sys_mq_timedsend - send message to queue (simplified, no timeout)
+ */
+static int64_t sys_mq_timedsend(uint64_t mqdes, uint64_t msg_ptr, uint64_t msg_len,
+                                uint64_t msg_prio, uint64_t arg5, uint64_t arg6) {
+    (void)arg5; (void)arg6;  /* Timeout not implemented */
+
+    if (!access_ok((void *)msg_ptr, msg_len)) {
+        return -EFAULT;
+    }
+
+    const char *msg = (const char *)msg_ptr;
+
+    extern int mq_send_syscall(int mqdes, const char *msg, size_t msglen, unsigned int prio);
+    return mq_send_syscall((int)mqdes, msg, (size_t)msg_len, (unsigned int)msg_prio);
+}
+
+/*
+ * sys_mq_timedreceive - receive message from queue (simplified, no timeout)
+ */
+static int64_t sys_mq_timedreceive(uint64_t mqdes, uint64_t msg_ptr, uint64_t msg_len,
+                                   uint64_t msg_prio_ptr, uint64_t arg5, uint64_t arg6) {
+    (void)arg5; (void)arg6;  /* Timeout not implemented */
+
+    if (!access_ok((void *)msg_ptr, msg_len)) {
+        return -EFAULT;
+    }
+
+    char *msg = (char *)msg_ptr;
+
+    unsigned int *msg_prio = NULL;
+    if (msg_prio_ptr && access_ok((void *)msg_prio_ptr, sizeof(unsigned int))) {
+        msg_prio = (unsigned int *)msg_prio_ptr;
+    }
+
+    extern int mq_receive_syscall(int mqdes, char *msg, size_t msglen, unsigned int *prio);
+    return mq_receive_syscall((int)mqdes, msg, (size_t)msg_len, msg_prio);
+}
+
+/*
+ * sys_mq_getsetattr - get/set message queue attributes
+ */
+static int64_t sys_mq_getsetattr(uint64_t mqdes, uint64_t newattr_ptr,
+                                 uint64_t oldattr_ptr, uint64_t arg4,
+                                 uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    extern int mq_getattr_syscall(int mqdes, void *attr);
+    extern int mq_setattr_syscall(int mqdes, const void *newattr, void *oldattr);
+
+    if (newattr_ptr) {
+        /* Set attributes */
+        if (!access_ok((void *)newattr_ptr, sizeof(void *))) {
+            return -EFAULT;
+        }
+
+        void *oldattr = NULL;
+        if (oldattr_ptr && access_ok((void *)oldattr_ptr, sizeof(void *))) {
+            oldattr = (void *)oldattr_ptr;
+        }
+
+        return mq_setattr_syscall((int)mqdes, (const void *)newattr_ptr, oldattr);
+    } else {
+        /* Get attributes only */
+        if (!oldattr_ptr || !access_ok((void *)oldattr_ptr, sizeof(void *))) {
+            return -EFAULT;
+        }
+
+        return mq_getattr_syscall((int)mqdes, (void *)oldattr_ptr);
     }
 }
 
@@ -3403,21 +3670,41 @@ static int64_t sys_sendto(uint64_t sockfd, uint64_t buf_ptr, uint64_t len,
     }
 
     socket_t *sock = socket_fds[sockfd];
-    uint32_t dst_ip = 0;
-    uint16_t dst_port = 0;
 
-    /* Get destination address if provided */
-    if (addr_ptr) {
-        sockaddr_in_t addr;
-        if (copy_from_user(&addr, (void *)addr_ptr, sizeof(addr)) < 0) {
-            kfree(buf);
-            return -14;
+    int ret;
+    if (sock->domain == AF_UNIX) {
+        /* Unix domain socket */
+        char dest_path[UNIX_PATH_MAX] = {0};
+
+        if (addr_ptr) {
+            sockaddr_un_t addr_un;
+            if (copy_from_user(&addr_un, (void *)addr_ptr, sizeof(addr_un)) < 0) {
+                kfree(buf);
+                return -14;
+            }
+            strncpy(dest_path, addr_un.sun_path, UNIX_PATH_MAX - 1);
         }
-        dst_ip = addr.sin_addr;
-        dst_port = addr.sin_port;
+
+        ret = socket_sendto_unix(sock, buf, len, dest_path[0] ? dest_path : NULL);
+    } else {
+        /* Internet socket */
+        uint32_t dst_ip = 0;
+        uint16_t dst_port = 0;
+
+        /* Get destination address if provided */
+        if (addr_ptr) {
+            sockaddr_in_t addr;
+            if (copy_from_user(&addr, (void *)addr_ptr, sizeof(addr)) < 0) {
+                kfree(buf);
+                return -14;
+            }
+            dst_ip = addr.sin_addr;
+            dst_port = addr.sin_port;
+        }
+
+        ret = socket_sendto(sock, buf, len, dst_ip, dst_port);
     }
 
-    int ret = socket_sendto(sock, buf, len, dst_ip, dst_port);
     kfree(buf);
     return ret;
 }
@@ -3444,26 +3731,43 @@ static int64_t sys_recvfrom(uint64_t sockfd, uint64_t buf_ptr, uint64_t len,
     }
 
     socket_t *sock = socket_fds[sockfd];
-    uint32_t src_ip = 0;
-    uint16_t src_port = 0;
+    ssize_t ret;
 
-    ssize_t ret = socket_recvfrom(sock, buf, len, &src_ip, &src_port);
+    if (sock->domain == AF_UNIX) {
+        /* Unix domain socket */
+        char src_path[UNIX_PATH_MAX] = {0};
+        ret = socket_recvfrom_unix(sock, buf, len, src_path);
 
-    if (ret > 0) {
-        /* Copy to user space */
-        if (copy_to_user((void *)buf_ptr, buf, ret) < 0) {
-            kfree(buf);
-            return -14;
+        if (ret > 0 && addr_ptr) {
+            /* Fill in source address */
+            sockaddr_un_t addr_un;
+            addr_un.sun_family = AF_UNIX;
+            strncpy(addr_un.sun_path, src_path, UNIX_PATH_MAX - 1);
+            addr_un.sun_path[UNIX_PATH_MAX - 1] = '\0';
+            copy_to_user((void *)addr_ptr, &addr_un, sizeof(addr_un));
         }
+    } else {
+        /* Internet socket */
+        uint32_t src_ip = 0;
+        uint16_t src_port = 0;
+        ret = socket_recvfrom(sock, buf, len, &src_ip, &src_port);
 
-        /* Fill in source address if requested */
-        if (addr_ptr) {
+        if (ret > 0 && addr_ptr) {
+            /* Fill in source address */
             sockaddr_in_t addr;
             addr.sin_family = AF_INET;
             addr.sin_addr = src_ip;
             addr.sin_port = src_port;
             memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
             copy_to_user((void *)addr_ptr, &addr, sizeof(addr));
+        }
+    }
+
+    if (ret > 0) {
+        /* Copy to user space */
+        if (copy_to_user((void *)buf_ptr, buf, ret) < 0) {
+            kfree(buf);
+            return -14;
         }
     }
 
@@ -3508,6 +3812,20 @@ void syscall_init(void) {
     syscall_register(SYS_IOCTL, sys_ioctl);
     syscall_register(SYS_ACCESS, sys_access);
     syscall_register(SYS_PIPE, sys_pipe);
+    syscall_register(SYS_SHM_OPEN, sys_shm_open);
+    syscall_register(SYS_SHM_UNLINK, sys_shm_unlink);
+    syscall_register(SYS_SEM_OPEN, sys_sem_open);
+    syscall_register(SYS_SEM_CLOSE, sys_sem_close);
+    syscall_register(SYS_SEM_UNLINK, sys_sem_unlink);
+    syscall_register(SYS_SEM_WAIT, sys_sem_wait);
+    syscall_register(SYS_SEM_POST, sys_sem_post);
+    syscall_register(SYS_SEM_TRYWAIT, sys_sem_trywait);
+    syscall_register(SYS_SEM_GETVALUE, sys_sem_getvalue);
+    syscall_register(SYS_MQ_OPEN, sys_mq_open);
+    syscall_register(SYS_MQ_UNLINK, sys_mq_unlink);
+    syscall_register(SYS_MQ_TIMEDSEND, sys_mq_timedsend);
+    syscall_register(SYS_MQ_TIMEDRECEIVE, sys_mq_timedreceive);
+    syscall_register(SYS_MQ_GETSETATTR, sys_mq_getsetattr);
     syscall_register(SYS_SCHED_YIELD, sys_sched_yield);
     syscall_register(SYS_DUP, sys_dup);
     syscall_register(SYS_DUP2, sys_dup2);

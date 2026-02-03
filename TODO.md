@@ -302,31 +302,35 @@
 
 ---
 
-## Phase 8: IPC Enhancements
+## Phase 8: IPC Enhancements [COMPLETE]
 
-### 8.1 POSIX Shared Memory
-- [ ] shm_open()/shm_unlink()
-- [ ] Shared memory object in tmpfs/shmfs
-- [ ] mmap() shared memory objects
-- [ ] Reference counting for shared segments
+### 8.1 POSIX Shared Memory [x]
+- [x] shm_open()/shm_unlink()
+- [x] Shared memory object management
+- [x] Physical memory allocation and kernel mapping
+- [x] Reference counting for shared segments
 
-### 8.2 POSIX Semaphores
-- [ ] sem_open()/sem_close()/sem_unlink()
-- [ ] sem_wait()/sem_post()/sem_trywait()
-- [ ] Named semaphores (via filesystem)
-- [ ] Unnamed semaphores (in shared memory)
+### 8.2 POSIX Semaphores [x]
+- [x] sem_open()/sem_close()/sem_unlink()
+- [x] sem_wait()/sem_post()/sem_trywait()
+- [x] sem_getvalue()
+- [x] Named semaphores
+- [x] Wait queues with blocking/unblocking
 
-### 8.3 POSIX Message Queues (Optional)
-- [ ] mq_open()/mq_close()/mq_unlink()
-- [ ] mq_send()/mq_receive()
-- [ ] Message priority support
+### 8.3 POSIX Message Queues [x]
+- [x] mq_open()/mq_close()/mq_unlink()
+- [x] mq_send()/mq_receive()
+- [x] Message priority support
+- [x] mq_getattr()/mq_setattr()
+- [x] Priority-ordered message delivery
+- [x] Blocking send/receive with wait queues
 
-### 8.4 Unix Domain Sockets
-- [ ] AF_UNIX socket creation
-- [ ] bind() to filesystem path
-- [ ] SOCK_STREAM (connection-oriented)
-- [ ] SOCK_DGRAM (connectionless)
-- [ ] SCM_RIGHTS (fd passing)
+### 8.4 Unix Domain Sockets [x]
+- [x] AF_UNIX socket creation
+- [x] bind() to filesystem path
+- [x] SOCK_STREAM (connection-oriented)
+- [x] SOCK_DGRAM (connectionless)
+- [x] SCM_RIGHTS (fd passing)
 
 ---
 

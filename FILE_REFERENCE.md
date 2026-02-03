@@ -2,7 +2,7 @@
 
 > **Purpose**: Complete reference of every file in the project. Update this file whenever adding, removing, or significantly changing files.
 >
-> **Last Updated**: 2026-02-01
+> **Last Updated**: 2026-02-02
 
 ---
 
@@ -285,6 +285,19 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 
 ---
 
+### kernel/ipc/ - Inter-Process Communication
+
+| File | Purpose |
+|------|---------|
+| `shm.h` | POSIX shared memory API. `shm_object_t` structure (name, size, physical/virtual addresses, refcount) |
+| `shm.c` | Shared memory implementation. `shm_open_internal()`, `shm_unlink_internal()`, `shm_resize()` for ftruncate, physical memory allocation, kernel virtual mapping (0xFFFFFFFF92000000-0xFFFFFFFFA2000000). Global table (MAX_SHM_OBJECTS=64), spinlock protection. Syscall wrappers: `shm_open_syscall()`, `shm_unlink_syscall()` |
+| `sem.h` | POSIX semaphore API. `sem_t` structure (name, value, refcount, waiters array, wait/post operations) |
+| `sem.c` | Semaphore implementation. Named semaphores, wait queue management, blocking wait/post operations. Global table (SEM_MAX=256), per-process handle table (SEM_HANDLE_MAX=64). Operations: `sem_open_syscall()`, `sem_close_syscall()`, `sem_unlink_syscall()`, `sem_wait_syscall()`, `sem_post_syscall()`, `sem_trywait_syscall()`, `sem_getvalue_syscall()`. Thread blocking/unblocking via scheduler |
+| `mqueue.h` | POSIX message queue API. `mqueue_t` structure (name, attributes, message list, send/recv waiters), `mq_attr_t` (mq_maxmsg, mq_msgsize, mq_curmsgs, mq_flags), `mq_message_t` (data, size, priority) |
+| `mqueue.c` | Message queue implementation. Priority-ordered message delivery (linked list), blocking send when full, blocking receive when empty. Default limits: 10 messages, 8KB per message. Global table (MQ_MAX=128), per-process handle table (MQ_HANDLE_MAX=64). Operations: `mq_open_syscall()`, `mq_close_syscall()`, `mq_unlink_syscall()`, `mq_send_syscall()`, `mq_receive_syscall()`, `mq_getattr_syscall()`, `mq_setattr_syscall()`. Separate wait queues for send and receive |
+
+---
+
 ### kernel/signal/ - Signal Handling
 
 | File | Purpose |
@@ -309,8 +322,10 @@ Builds both BIOS and UEFI bootloaders. Supports `KERNEL_SIZE` and `INITRD_SIZE` 
 | `udp.c` | UDP implementation. Datagram send/receive, port-based delivery, checksum optional |
 | `tcp.h` | TCP protocol definitions. TCP header (20 bytes), states (11 states), connection block, flags (FIN/SYN/RST/PSH/ACK/URG) |
 | `tcp.c` | TCP implementation (~600 lines). State machine, 3-way handshake, connection teardown, sequence numbers, flow control, basic retransmission, checksum with pseudo-header |
-| `socket.h` | BSD socket API. Socket structure, socket FD table, socket operations |
-| `socket.c` | Socket layer implementation. Create/bind/connect/listen/accept, sendto/recvfrom, AF_INET support, SOCK_DGRAM and SOCK_STREAM, per-socket receive buffers (8KB) |
+| `socket.h` | BSD socket API. Socket structure, socket FD table, socket operations, sockaddr_un_t |
+| `socket.c` | Socket layer implementation. Create/bind/connect/listen/accept, sendto/recvfrom, AF_INET and AF_UNIX support, SOCK_DGRAM and SOCK_STREAM, per-socket receive buffers (8KB) |
+| `unix_socket.h` | Unix domain socket API. sockaddr_un, unix_socket_t structure, SCM_RIGHTS for FD passing |
+| `unix_socket.c` | Unix socket implementation (~600 lines). SOCK_STREAM (circular buffer), SOCK_DGRAM (queue), bind to filesystem paths, FD passing via SCM_RIGHTS |
 
 ---
 

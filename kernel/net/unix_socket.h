@@ -1,63 +1,79 @@
-/* unix_socket.h - Unix Domain Socket Implementation */
+/* unix_socket.h - Unix Domain Sockets */
 #ifndef _NET_UNIX_SOCKET_H
 #define _NET_UNIX_SOCKET_H
 
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
-#include "../include/types.h"
 #include "../sync/spinlock.h"
+#include "../include/types.h"
 
-/* Unix socket address */
-#define AF_UNIX         1
+/* Unix socket address structure defined in socket.h */
 #define UNIX_PATH_MAX   108
 
-typedef struct sockaddr_un {
-    uint16_t sun_family;            /* AF_UNIX */
-    char sun_path[UNIX_PATH_MAX];   /* Path to socket file */
-} sockaddr_un_t;
+/* Unix socket connection queue entry */
+typedef struct unix_conn_queue_entry {
+    struct unix_socket *peer;
+    struct unix_conn_queue_entry *next;
+} unix_conn_queue_entry_t;
 
-/* Unix socket buffer size */
-#define UNIX_SOCKET_BUF_SIZE    4096
+/* Unix socket circular buffer for SOCK_STREAM */
+#define UNIX_SOCK_BUF_SIZE  8192
+
+typedef struct unix_stream_buf {
+    uint8_t data[UNIX_SOCK_BUF_SIZE];
+    uint32_t read_pos;
+    uint32_t write_pos;
+    uint32_t count;
+} unix_stream_buf_t;
+
+/* Unix socket datagram queue entry */
+typedef struct unix_dgram_entry {
+    uint8_t data[UNIX_SOCK_BUF_SIZE];
+    uint32_t len;
+    char src_path[UNIX_PATH_MAX];
+    struct unix_dgram_entry *next;
+} unix_dgram_entry_t;
+
+/* Control message for SCM_RIGHTS (fd passing) */
+#define SCM_RIGHTS      1
+#define CMSG_MAX_FDS    8
+
+typedef struct unix_cmsg {
+    int type;                   /* SCM_RIGHTS */
+    int fds[CMSG_MAX_FDS];      /* File descriptors */
+    int fd_count;               /* Number of FDs */
+} unix_cmsg_t;
 
 /* Unix socket state */
-typedef enum unix_socket_state {
-    UNIX_CLOSED,
-    UNIX_BOUND,
-    UNIX_LISTENING,
-    UNIX_CONNECTED
-} unix_socket_state_t;
-
-/* Unix socket connection queue */
-#define UNIX_CONN_QUEUE_SIZE    5
-
-typedef struct unix_connection_queue {
-    struct unix_socket *pending[UNIX_CONN_QUEUE_SIZE];
-    int count;
-    int backlog;
-} unix_connection_queue_t;
-
-/* Unix socket structure */
 typedef struct unix_socket {
-    int type;                       /* SOCK_STREAM or SOCK_DGRAM */
-    unix_socket_state_t state;      /* Socket state */
-    char path[UNIX_PATH_MAX];       /* Bound path */
+    int type;                           /* SOCK_STREAM or SOCK_DGRAM */
+    char path[UNIX_PATH_MAX];           /* Bound filesystem path */
+    bool bound;                         /* Bound to a path */
+    bool listening;                     /* Listening (SOCK_STREAM) */
+    bool connected;                     /* Connected (SOCK_STREAM) */
 
-    /* For SOCK_STREAM connections */
-    struct unix_socket *peer;       /* Connected peer socket */
-    struct unix_socket *listener;   /* Listening socket (for accepted connections) */
-    unix_connection_queue_t *conn_queue;  /* Connection queue (for listening sockets) */
+    /* SOCK_STREAM specific */
+    struct unix_socket *peer;           /* Connected peer socket */
+    unix_stream_buf_t *stream_buf;      /* Stream receive buffer */
+    unix_conn_queue_entry_t *conn_queue_head;  /* Connection queue */
+    unix_conn_queue_entry_t *conn_queue_tail;
+    int backlog;                        /* Listen backlog */
+    int conn_queue_len;                 /* Current queue length */
 
-    /* Circular buffer for data */
-    uint8_t *buffer;                /* Data buffer */
-    size_t buf_size;                /* Buffer size */
-    size_t buf_head;                /* Write position */
-    size_t buf_tail;                /* Read position */
-    size_t buf_count;               /* Number of bytes in buffer */
+    /* SOCK_DGRAM specific */
+    unix_dgram_entry_t *dgram_queue_head;   /* Datagram queue */
+    unix_dgram_entry_t *dgram_queue_tail;
+    int dgram_queue_len;                /* Current queue length */
 
-    /* Synchronization */
+    /* Control messages (for SCM_RIGHTS) */
+    unix_cmsg_t *pending_cmsg;          /* Pending control message */
+
     spinlock_t lock;
 } unix_socket_t;
+
+/* Unix socket initialization */
+void unix_socket_init(void);
 
 /* Unix socket operations */
 unix_socket_t *unix_socket_create(int type);
@@ -66,10 +82,11 @@ int unix_socket_bind(unix_socket_t *sock, const char *path);
 int unix_socket_connect(unix_socket_t *sock, const char *path);
 int unix_socket_listen(unix_socket_t *sock, int backlog);
 unix_socket_t *unix_socket_accept(unix_socket_t *sock);
-ssize_t unix_socket_send(unix_socket_t *sock, const void *buf, size_t len);
-ssize_t unix_socket_recv(unix_socket_t *sock, void *buf, size_t len);
+int unix_socket_sendto(unix_socket_t *sock, const void *buf, size_t len, const char *dest_path);
+ssize_t unix_socket_recvfrom(unix_socket_t *sock, void *buf, size_t len, char *src_path);
 
-/* Helper functions */
-unix_socket_t *unix_socket_find_by_path(const char *path);
+/* Control message operations (SCM_RIGHTS) */
+int unix_socket_send_fds(unix_socket_t *sock, const int *fds, int fd_count);
+int unix_socket_recv_fds(unix_socket_t *sock, int *fds, int *fd_count);
 
 #endif /* _NET_UNIX_SOCKET_H */
