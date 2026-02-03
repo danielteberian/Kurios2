@@ -22,6 +22,11 @@ typedef struct {
     uint64_t interp_base;       /* Base address where interpreter was loaded */
     uint64_t interp_entry;      /* Entry point of interpreter */
     uint64_t program_entry;     /* Original program entry point (before interp override) */
+
+    /* PT_DYNAMIC segment info */
+    bool has_dynamic;           /* True if PT_DYNAMIC segment exists */
+    uint64_t dynamic_addr;      /* Virtual address of PT_DYNAMIC segment */
+    uint64_t dynamic_size;      /* Size of PT_DYNAMIC segment */
 } elf_load_result_t;
 
 /*

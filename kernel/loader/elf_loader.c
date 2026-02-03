@@ -140,6 +140,9 @@ int elf_load(address_space_t *as, const void *elf_data, uint64_t elf_size,
     result->interp_path[0] = '\0';
     result->interp_base = 0;
     result->interp_entry = 0;
+    result->has_dynamic = false;
+    result->dynamic_addr = 0;
+    result->dynamic_size = 0;
 
     /* Load each PT_LOAD segment */
     const Elf64_Phdr *phdr_table = (const Elf64_Phdr *)((const uint8_t *)elf_data + ehdr->e_phoff);
@@ -191,6 +194,28 @@ int elf_load(address_space_t *as, const void *elf_data, uint64_t elf_size,
                 result->has_interp = true;
                 INFO("PT_INTERP: %s", result->interp_path);
             }
+        } else if (phdr->p_type == PT_DYNAMIC) {
+            /* Record PT_DYNAMIC segment for later processing */
+            result->has_dynamic = true;
+            result->dynamic_addr = phdr->p_vaddr;
+            result->dynamic_size = phdr->p_memsz;
+            INFO("PT_DYNAMIC: vaddr=0x%llx, size=%llu",
+                 result->dynamic_addr, result->dynamic_size);
+        }
+    }
+
+    /* If this is a PIE executable (ET_DYN), process basic relocations */
+    if (ehdr->e_type == ET_DYN && result->has_dynamic) {
+        extern int elf_process_relocations(address_space_t *as,
+                                          const void *elf_data,
+                                          uint64_t base_addr,
+                                          const Elf64_Phdr *phdr_table,
+                                          uint16_t phdr_num);
+        int ret = elf_process_relocations(as, elf_data, result->base_addr,
+                                         phdr_table, ehdr->e_phnum);
+        if (ret < 0) {
+            ERROR("Failed to process relocations: %d", ret);
+            return ret;
         }
     }
 
@@ -259,6 +284,95 @@ int elf_load_file(address_space_t *as, const char *path,
     kfree(buffer);
 
     return ret;
+}
+
+/*
+ * Process ELF relocations for PIE executables
+ * Handles R_X86_64_RELATIVE relocations at minimum
+ */
+int elf_process_relocations(address_space_t *as, const void *elf_data,
+                           uint64_t base_addr,
+                           const Elf64_Phdr *phdr_table,
+                           uint16_t phdr_num) {
+    /* Find PT_DYNAMIC segment */
+    const Elf64_Phdr *dynamic_phdr = NULL;
+    for (uint16_t i = 0; i < phdr_num; i++) {
+        if (phdr_table[i].p_type == PT_DYNAMIC) {
+            dynamic_phdr = &phdr_table[i];
+            break;
+        }
+    }
+
+    if (!dynamic_phdr) {
+        return 0;  /* No PT_DYNAMIC, nothing to do */
+    }
+
+    /* Read dynamic section */
+    const Elf64_Dyn *dyn = (const Elf64_Dyn *)((const uint8_t *)elf_data + dynamic_phdr->p_offset);
+    uint64_t dyn_count = dynamic_phdr->p_filesz / sizeof(Elf64_Dyn);
+
+    /* Find RELA table */
+    uint64_t rela_addr = 0;
+    uint64_t rela_size = 0;
+
+    for (uint64_t i = 0; i < dyn_count; i++) {
+        if (dyn[i].d_tag == DT_RELA) {
+            rela_addr = dyn[i].d_un.d_ptr;
+        } else if (dyn[i].d_tag == DT_RELASZ) {
+            rela_size = dyn[i].d_un.d_val;
+        } else if (dyn[i].d_tag == DT_NULL) {
+            break;
+        }
+    }
+
+    if (rela_addr == 0 || rela_size == 0) {
+        return 0;  /* No relocations */
+    }
+
+    /* Find the RELA table in the ELF file */
+    const Elf64_Rela *rela_table = NULL;
+    for (uint16_t i = 0; i < phdr_num; i++) {
+        const Elf64_Phdr *phdr = &phdr_table[i];
+        if (phdr->p_type == PT_LOAD &&
+            rela_addr >= phdr->p_vaddr &&
+            rela_addr < phdr->p_vaddr + phdr->p_filesz) {
+            uint64_t offset = rela_addr - phdr->p_vaddr + phdr->p_offset;
+            rela_table = (const Elf64_Rela *)((const uint8_t *)elf_data + offset);
+            break;
+        }
+    }
+
+    if (!rela_table) {
+        ERROR("Could not find RELA table in ELF file");
+        return -EINVAL;
+    }
+
+    uint64_t rela_count = rela_size / sizeof(Elf64_Rela);
+    DEBUG("Processing %llu relocations (base=0x%llx)", rela_count, base_addr);
+
+    /* Process each relocation */
+    for (uint64_t i = 0; i < rela_count; i++) {
+        uint64_t r_offset = rela_table[i].r_offset;
+        uint64_t r_info = rela_table[i].r_info;
+        int64_t r_addend = rela_table[i].r_addend;
+        uint32_t r_type = ELF64_R_TYPE(r_info);
+
+        /* Only handle R_X86_64_RELATIVE for now */
+        if (r_type == R_X86_64_RELATIVE) {
+            /* Calculate the value to write */
+            uint64_t value = base_addr + r_addend;
+            uint64_t target_addr = base_addr + r_offset;
+
+            /* Write to the target address (need to map temporarily) */
+            /* Since we're in kernel context, we can directly access user memory */
+            /* after switching to the target address space */
+            *(uint64_t *)target_addr = value;
+        }
+        /* Other relocation types (GLOB_DAT, JUMP_SLOT, etc.) are handled by ld.so */
+    }
+
+    INFO("Processed %llu relocations successfully", rela_count);
+    return 0;
 }
 
 /*

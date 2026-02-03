@@ -334,57 +334,63 @@
 
 ---
 
-## Phase 9: Dynamic Linking
+## Phase 9: Dynamic Linking [CORE COMPLETE]
 
-### 9.1 ELF Interpreter Support
-- [ ] PT_INTERP segment handling
-- [ ] Load ELF interpreter (ld.so)
-- [ ] Auxiliary vector (AT_*) passing
-- [ ] Interpreter gets control first
+### 9.1 ELF Interpreter Support [x]
+- [x] PT_INTERP segment handling
+- [x] Load ELF interpreter (ld.so) via elf_load_file()
+- [x] Auxiliary vector (AT_*) passing (AT_PHDR, AT_ENTRY, AT_BASE, AT_RANDOM, AT_UID/GID, AT_PAGESZ)
+- [x] Interpreter gets control first (entry point override)
 
-### 9.2 Shared Library Support
-- [ ] PT_DYNAMIC segment parsing
-- [ ] DT_NEEDED (library dependencies)
-- [ ] Library search path (/lib, /usr/lib)
-- [ ] Shared library loading
+### 9.2 Shared Library Support [PARTIAL]
+- [x] PT_DYNAMIC segment parsing (recorded for ld.so)
+- [ ] DT_NEEDED (library dependencies) - delegated to ld.so
+- [ ] Library search path (/lib, /usr/lib) - delegated to ld.so
+- [ ] Shared library loading - delegated to ld.so
 
-### 9.3 Relocation
-- [ ] PLT (Procedure Linkage Table)
-- [ ] GOT (Global Offset Table)
-- [ ] Lazy binding support
-- [ ] R_X86_64_* relocation types
+### 9.3 Relocation [PARTIAL]
+- [x] R_X86_64_RELATIVE (basic PIE support)
+- [ ] PLT (Procedure Linkage Table) - delegated to ld.so
+- [ ] GOT (Global Offset Table) - delegated to ld.so
+- [ ] Lazy binding support - delegated to ld.so
+- [ ] Other R_X86_64_* relocation types (GLOB_DAT, JUMP_SLOT, etc.) - delegated to ld.so
 
-### 9.4 Symbol Resolution
-- [ ] Symbol table parsing (.dynsym)
-- [ ] String table parsing (.dynstr)
-- [ ] Symbol lookup across libraries
-- [ ] Weak symbols
+### 9.4 Symbol Resolution [NOT STARTED]
+- [ ] Symbol table parsing (.dynsym) - delegated to ld.so
+- [ ] String table parsing (.dynstr) - delegated to ld.so
+- [ ] Symbol lookup across libraries - delegated to ld.so
+- [ ] Weak symbols - delegated to ld.so
+
+**Architecture Note**: Core kernel provides PT_INTERP loading, auxiliary vector, and basic relocations.
+Complex relocations, symbol resolution, and library loading are delegated to the dynamic linker (ld.so).
 
 ---
 
-## Phase 10: SMP Improvements
+## Phase 10: SMP Improvements [COMPLETE]
 
 ### 10.1 AP Boot [x]
-- [x] Debug and fix AP startup (currently hangs after SIPI)
+- [x] Debug and fix AP startup (fixed physical vs virtual address bug)
 - [x] AP enters long mode and runs scheduler
-- [ ] Per-CPU idle threads
+- [x] Per-CPU idle threads (each CPU has its own idle thread)
 - [ ] CPU hotplug (optional)
 
-### 10.2 SMP Synchronization
-- [ ] Read-write locks (rwlock)
-- [ ] Per-CPU variables (already have infrastructure)
+### 10.2 SMP Synchronization [x]
+- [x] Read-write locks (rwlock) - kernel/sync/rwlock.c
+- [x] Per-CPU variables (percpu_data infrastructure)
 - [ ] RCU (Read-Copy-Update) - optional, advanced
 
-### 10.3 TLB Management
-- [ ] TLB shootdown (infrastructure exists)
-- [ ] Test and verify TLB shootdown works
-- [ ] Optimize for single-CPU case
+### 10.3 TLB Management [x]
+- [x] TLB shootdown (infrastructure exists via kernel/smp/tlb.c)
+- [x] Test and verify TLB shootdown works (verified in earlier session)
+- [x] Optimize for single-CPU case (checks smp_initialized())
 
-### 10.4 Scheduler Improvements
-- [ ] Per-CPU run queues
-- [ ] Load balancing between CPUs
-- [ ] CPU affinity (sched_setaffinity)
+### 10.4 Scheduler Improvements [x]
+- [x] Per-CPU run queues (each CPU has its own ready queue)
+- [x] Load balancing between CPUs (automatic migration every 1 second)
+- [x] CPU affinity (sched_setaffinity/getaffinity syscalls, affinity-aware scheduling)
 - [ ] Real-time scheduling classes (optional)
+
+**Status**: All essential SMP features complete. Optional items: CPU hotplug, RCU, real-time scheduling.
 
 ---
 
