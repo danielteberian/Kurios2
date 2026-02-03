@@ -10,6 +10,7 @@ SRC_DIR := .
 ASM_SOURCES := entry.asm arch/x86_64/gdt_flush.asm arch/x86_64/isr.asm sched/context.asm syscall/syscall_entry.asm user/ring3_enter.asm smp/ap_trampoline.asm
 C_SOURCES := \
     main.c \
+    cmdline.c \
     stack_protector.c \
     lib/string.c \
     debug/debug.c \
@@ -36,6 +37,7 @@ C_SOURCES := \
     drivers/vga.c \
     drivers/pit.c \
     drivers/hpet.c \
+    drivers/entropy.c \
     drivers/tty.c \
     drivers/mouse.c \
     drivers/pci.c \

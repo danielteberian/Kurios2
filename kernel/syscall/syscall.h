@@ -66,6 +66,7 @@
 #define SYS_READLINK    89
 #define SYS_UMASK       95
 #define SYS_GETTIMEOFDAY 96
+#define SYS_SETTIMEOFDAY 164
 #define SYS_GETRUSAGE   98
 #define SYS_TIMES       100
 #define SYS_GETRLIMIT   97
@@ -89,6 +90,7 @@
 #define SYS_GETSID      124
 #define SYS_SETRLIMIT   160
 #define SYS_SYNC        162
+#define SYS_REBOOT      169
 #define SYS_FSYNC       74
 #define SYS_FDATASYNC   75
 #define SYS_CHMOD       90

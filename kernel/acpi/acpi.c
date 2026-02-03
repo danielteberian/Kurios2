@@ -281,9 +281,11 @@ static void parse_fadt(acpi_fadt_t *fadt)
     acpi_info.has_fadt = true;
     acpi_info.pm_timer_port = fadt->pm_tmr_blk;
     acpi_info.sci_interrupt = fadt->sci_int;
+    acpi_info.pm1a_cnt_blk = fadt->pm1a_cnt_blk;
+    acpi_info.pm1b_cnt_blk = fadt->pm1b_cnt_blk;
 
-    DEBUG("ACPI: FADT: PM timer at 0x%x, SCI IRQ %u",
-          acpi_info.pm_timer_port, acpi_info.sci_interrupt);
+    DEBUG("ACPI: FADT: PM timer at 0x%x, SCI IRQ %u, PM1a_CNT at 0x%x",
+          acpi_info.pm_timer_port, acpi_info.sci_interrupt, acpi_info.pm1a_cnt_blk);
 }
 
 /*
@@ -556,3 +558,35 @@ void acpi_run_tests(void)
     kprintf("\n");
 }
 #endif /* DEBUG_TESTS */
+
+/*
+ * Shutdown the system via ACPI
+ * Writes SLP_TYPa=5 and SLP_EN=1 to PM1a_CNT
+ */
+void acpi_shutdown(void)
+{
+    if (!acpi_info.valid || !acpi_info.has_fadt) {
+        ERROR("ACPI: Cannot shutdown - no FADT table");
+        return;
+    }
+
+    if (acpi_info.pm1a_cnt_blk == 0) {
+        ERROR("ACPI: Cannot shutdown - no PM1a_CNT register");
+        return;
+    }
+
+    INFO("ACPI: Shutting down via PM1a_CNT (0x%x)...", acpi_info.pm1a_cnt_blk);
+
+    /* Write SLP_TYPa=5 (shutdown), SLP_EN=1 (bit 13) to PM1a_CNT */
+    /* PM1a_CNT format: SLP_TYP[12:10], SLP_EN[13] */
+    uint16_t value = (5 << 10) | (1 << 13);
+    outw(acpi_info.pm1a_cnt_blk, value);
+
+    /* Also write to PM1b_CNT if it exists */
+    if (acpi_info.pm1b_cnt_blk != 0) {
+        outw(acpi_info.pm1b_cnt_blk, value);
+    }
+
+    /* If we reach here, shutdown failed */
+    ERROR("ACPI: Shutdown failed - system still running");
+}

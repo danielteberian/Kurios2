@@ -45,6 +45,8 @@
 #include "ipc/mqueue.h"
 #include "lib/string.h"
 #include "boot_info.h"
+#include "cmdline.h"
+#include "drivers/entropy.h"
 
 /* Forward declaration for loopback */
 void loopback_init(void);
@@ -330,6 +332,10 @@ void kernel_main(BootInfo *boot_info) {
 
     INFO("Boot info validated (magic: 0x%llx)", boot_info->magic);
 
+    /* Initialize command line parser */
+    const char *cmdline_ptr = boot_info->cmdline ? (const char *)boot_info->cmdline : NULL;
+    cmdline_init(cmdline_ptr);
+
     /* Print boot information */
     kprintf("\n=== Boot Information ===\n");
     kprintf("  Protocol version: %llu\n", boot_info->version);
@@ -552,6 +558,9 @@ void kernel_main(BootInfo *boot_info) {
 
     /* Initialize RTC for wall clock time */
     rtc_init();
+
+    /* Initialize entropy pool (after RTC, PIT, HPET) */
+    entropy_init();
 
     /* Initialize LAPIC timer (uses HPET for calibration) */
     lapic_timer_init();

@@ -194,3 +194,11 @@ void rtc_init(void) {
 uint64_t rtc_get_boot_time(void) {
     return boot_time;
 }
+
+/*
+ * Set boot time offset
+ * Used by settimeofday() to adjust system time
+ */
+void rtc_set_boot_time(uint64_t new_boot_time) {
+    boot_time = new_boot_time;
+}

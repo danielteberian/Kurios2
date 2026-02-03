@@ -30,4 +30,7 @@ uint64_t rtc_get_boot_time(void);
 /* Get time since boot in seconds */
 uint64_t rtc_get_time_since_boot(void);
 
+/* Set boot time offset (for settimeofday) */
+void rtc_set_boot_time(uint64_t new_boot_time);
+
 #endif /* RTC_H */

@@ -276,6 +276,8 @@ typedef struct acpi_info {
     bool     has_fadt;           /* FADT table found */
     uint32_t pm_timer_port;      /* PM timer I/O port */
     uint16_t sci_interrupt;      /* SCI interrupt number */
+    uint32_t pm1a_cnt_blk;       /* PM1a Control Block (for shutdown) */
+    uint32_t pm1b_cnt_blk;       /* PM1b Control Block (for shutdown) */
 } acpi_info_t;
 
 /*
@@ -301,6 +303,9 @@ uint32_t acpi_isa_irq_to_gsi(uint8_t irq);
 
 /* Get interrupt override flags for an ISA IRQ (0 if no override) */
 uint16_t acpi_get_irq_flags(uint8_t irq);
+
+/* Shutdown the system via ACPI */
+void acpi_shutdown(void);
 
 #ifdef DEBUG_TESTS
 /* Run ACPI tests */

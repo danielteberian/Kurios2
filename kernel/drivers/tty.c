@@ -59,56 +59,21 @@ static node_ops_t zero_ops = {
     .write = null_write,  /* Same as /dev/null */
 };
 
-/* /dev/urandom - returns random bytes */
-static uint64_t rng_state = 0;
-
-static inline uint64_t rdtsc(void) {
-    uint32_t lo, hi;
-    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
-    return ((uint64_t)hi << 32) | lo;
-}
-
-static uint64_t xorshift64(void) {
-    if (rng_state == 0) {
-        rng_state = rdtsc() ^ 0x5DEECE66DULL;
-    }
-    uint64_t x = rng_state;
-    x ^= x << 13;
-    x ^= x >> 7;
-    x ^= x << 17;
-    rng_state = x;
-    return x;
-}
+/* /dev/urandom - returns random bytes (now uses entropy pool) */
+#include "entropy.h"
 
 static ssize_t urandom_read(vfs_node_t *node, void *buf, size_t size, uint64_t offset) {
     (void)node; (void)offset;
-    uint8_t *dst = (uint8_t *)buf;
-    size_t i = 0;
-
-    while (i < size) {
-        uint64_t r = xorshift64();
-        size_t chunk = (size - i < 8) ? (size - i) : 8;
-        for (size_t j = 0; j < chunk; j++) {
-            dst[i++] = (uint8_t)(r >> (j * 8));
-        }
-    }
+    entropy_get_random_bytes(buf, size);
     return (ssize_t)size;
 }
 
 /*
  * Get random bytes (for getrandom syscall)
+ * Now uses proper entropy pool
  */
 void get_random_bytes(void *buf, size_t size) {
-    uint8_t *dst = (uint8_t *)buf;
-    size_t i = 0;
-
-    while (i < size) {
-        uint64_t r = xorshift64();
-        size_t chunk = (size - i < 8) ? (size - i) : 8;
-        for (size_t j = 0; j < chunk; j++) {
-            dst[i++] = (uint8_t)(r >> (j * 8));
-        }
-    }
+    entropy_get_random_bytes(buf, size);
 }
 
 static node_ops_t urandom_ops = {

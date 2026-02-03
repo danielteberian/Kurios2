@@ -2,6 +2,58 @@
 
 ## Completed Tasks
 
+### Latest (2026-02-02 Night): Miscellaneous Improvements - Command Line, Power, Time, Entropy
+
+**Implemented:**
+1. **Kernel Command Line Parser (Phase 13.4):**
+   - `cmdline_init()` - Parses command line from bootloader
+   - `cmdline_get_param()` - Retrieves parameter values
+   - `cmdline_has_flag()` - Checks for flag presence
+   - Infrastructure ready for boot options (root=, init=, etc.)
+   - Files: kernel/cmdline.c, cmdline.h
+
+2. **ACPI Shutdown (Phase 11.1):**
+   - `acpi_shutdown()` - Power off via PM1a_CNT register (SLP_TYP=5, SLP_EN=1)
+   - `sys_reboot()` syscall (SYS_REBOOT=169) with Linux-compatible magic numbers
+   - Commands: POWER_OFF (0xCDEF0123), RESTART (0x01234567), HALT (0x4321FEDC)
+   - Root privilege required (euid == 0)
+   - Automatic filesystem sync before shutdown
+
+3. **settimeofday() Syscall (Phase 13.1):**
+   - `sys_settimeofday()` - Set system time (root only)
+   - `rtc_set_boot_time()` - Adjust boot time offset
+   - Calculates boot_time = requested_time - uptime
+   - Uses HPET or PIT for precise uptime tracking
+   - Syscall: SYS_SETTIMEOFDAY=164
+
+4. **Improved Entropy Pool (Phase 13.2):**
+   - 512-byte entropy pool with SHA-256-like mixing
+   - Multiple entropy sources: TSC, PIT, RTC, HPET, stack addresses
+   - `entropy_add()` - Add entropy with bits estimate
+   - `entropy_get_random_bytes()` - Extract random data
+   - Automatic entropy collection on extraction
+   - Spinlock protection for SMP safety
+   - Replaces simple xorshift64 PRNG
+   - Files: kernel/drivers/entropy.c, entropy.h
+
+**Impact:**
+- System can now be properly shutdown/rebooted
+- Time can be set by userspace (e.g., via NTP)
+- Better random number generation for security
+- Boot parameters can be passed from bootloader
+
+**Files Modified:**
+- kernel/cmdline.c (new), cmdline.h (new)
+- kernel/drivers/entropy.c (new), entropy.h (new)
+- kernel/drivers/rtc.c (added rtc_set_boot_time)
+- kernel/drivers/tty.c (urandom now uses entropy pool)
+- kernel/acpi/acpi.c (added acpi_shutdown)
+- kernel/syscall/syscall.c (added sys_reboot, sys_settimeofday)
+- kernel/main.c (added cmdline_init, entropy_init calls)
+- kernel/Makefile (added new source files)
+
+---
+
 ### Phase 9: Dynamic Linking - Core Infrastructure (Phases 9.1 & 9.2) [COMPLETE]
 - [2026-02-02] PT_INTERP, PT_DYNAMIC, and Basic Relocations
   - **PT_INTERP Parsing (Phase 9.1):** Modified elf_load() to detect and extract interpreter path

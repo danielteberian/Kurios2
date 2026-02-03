@@ -26,6 +26,7 @@
 #include "../signal/signal.h"
 #include "../arch/x86_64/cpu.h"
 #include "lib/string.h"
+#include "../acpi/acpi.h"
 
 /*
  * Model Specific Registers for SYSCALL/SYSRET
@@ -1377,6 +1378,90 @@ static int64_t sys_fdatasync(uint64_t fd, uint64_t arg2, uint64_t arg3,
 }
 
 /*
+ * sys_reboot - reboot or shutdown the system
+ * arg1: magic1 (0xfee1dead)
+ * arg2: magic2 (672274793 = 0x28121969, or other valid magic)
+ * arg3: cmd (LINUX_REBOOT_CMD_*)
+ * arg4: arg (unused)
+ *
+ * Commands:
+ *   0xCDEF0123 = POWER_OFF
+ *   0x01234567 = RESTART
+ *   0x4321FEDC = HALT
+ *   0x89ABCDEF = KEXEC
+ */
+static int64_t sys_reboot(uint64_t magic1, uint64_t magic2, uint64_t cmd,
+                          uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)arg4; (void)arg5; (void)arg6;
+
+    #define LINUX_REBOOT_MAGIC1      0xfee1dead
+    #define LINUX_REBOOT_MAGIC2      672274793  /* 0x28121969 */
+    #define LINUX_REBOOT_MAGIC2A     85072278   /* 0x05121996 */
+    #define LINUX_REBOOT_MAGIC2B     369367448  /* 0x16041998 */
+    #define LINUX_REBOOT_MAGIC2C     537993216  /* 0x20112000 */
+
+    #define LINUX_REBOOT_CMD_RESTART    0x01234567
+    #define LINUX_REBOOT_CMD_HALT       0x4321FEDC
+    #define LINUX_REBOOT_CMD_POWER_OFF  0xCDEF0123
+    #define LINUX_REBOOT_CMD_KEXEC      0x89ABCDEF
+
+    /* Check magic numbers for safety */
+    if (magic1 != LINUX_REBOOT_MAGIC1) {
+        return -EINVAL;
+    }
+
+    if (magic2 != LINUX_REBOOT_MAGIC2 &&
+        magic2 != LINUX_REBOOT_MAGIC2A &&
+        magic2 != LINUX_REBOOT_MAGIC2B &&
+        magic2 != LINUX_REBOOT_MAGIC2C) {
+        return -EINVAL;
+    }
+
+    /* Require root privilege */
+    process_t *current = process_get_current();
+    if (!current || current->euid != 0) {
+        return -EPERM;
+    }
+
+    /* Handle reboot commands */
+    switch (cmd) {
+        case LINUX_REBOOT_CMD_POWER_OFF:
+            INFO("System shutdown requested via reboot()");
+            vfs_sync();  /* Sync filesystems before shutdown */
+            acpi_shutdown();
+            /* If acpi_shutdown returns, fall through to halt */
+            /* fallthrough */
+
+        case LINUX_REBOOT_CMD_HALT:
+            INFO("System halt requested via reboot()");
+            vfs_sync();
+            cli();
+            while (1) { hlt(); }
+            break;
+
+        case LINUX_REBOOT_CMD_RESTART:
+            INFO("System restart requested via reboot()");
+            vfs_sync();
+            /* CPU reset via keyboard controller (legacy method) */
+            outb(0x64, 0xFE);
+            /* If that didn't work, just halt */
+            cli();
+            while (1) { hlt(); }
+            break;
+
+        case LINUX_REBOOT_CMD_KEXEC:
+            /* kexec not implemented */
+            return -ENOSYS;
+
+        default:
+            return -EINVAL;
+    }
+
+    /* Never reached */
+    return 0;
+}
+
+/*
  * sys_getrusage - get resource usage (stub)
  * Returns zeros - actual resource tracking not implemented
  */
@@ -1845,6 +1930,66 @@ static int64_t sys_gettimeofday(uint64_t tv, uint64_t tz, uint64_t arg3,
             return -EFAULT;
         }
     }
+
+    return 0;
+}
+
+/*
+ * sys_settimeofday - set current time
+ * Requires root privilege (euid == 0)
+ */
+static int64_t sys_settimeofday(uint64_t tv, uint64_t tz, uint64_t arg3,
+                                uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    (void)tz; (void)arg3; (void)arg4; (void)arg5; (void)arg6;
+
+    /* Require root privilege */
+    process_t *current = process_get_current();
+    if (!current || current->euid != 0) {
+        return -EPERM;
+    }
+
+    if (!tv) {
+        return -EINVAL;
+    }
+
+    if (!access_ok((void *)tv, sizeof(timeval_t))) {
+        return -EFAULT;
+    }
+
+    timeval_t ktv;
+    if (copy_from_user(&ktv, (void *)tv, sizeof(ktv)) < 0) {
+        return -EFAULT;
+    }
+
+    /* Calculate new boot time offset
+     * boot_time = current_time - uptime
+     * We want: current_time = tv
+     * So: boot_time = tv - uptime
+     */
+    uint64_t uptime_sec, uptime_usec;
+    if (hpet_is_available()) {
+        uint64_t freq = hpet_get_frequency();
+        uint64_t ticks = hpet_read_counter();
+        uptime_sec = ticks / freq;
+        uint64_t remainder = ticks % freq;
+        uptime_usec = (remainder * 1000000) / freq;
+    } else {
+        uint64_t uptime_ms = pit_get_uptime_ms();
+        uptime_sec = uptime_ms / 1000;
+        uptime_usec = (uptime_ms % 1000) * 1000;
+    }
+
+    /* Calculate new boot time */
+    uint64_t new_boot_time = ktv.tv_sec - uptime_sec;
+    /* Account for microseconds if needed */
+    if (ktv.tv_usec < (int64_t)uptime_usec) {
+        new_boot_time--;
+    }
+
+    rtc_set_boot_time(new_boot_time);
+
+    INFO("System time set to %lld.%06lld (boot time offset: %llu)",
+         ktv.tv_sec, ktv.tv_usec, new_boot_time);
 
     return 0;
 }
@@ -3995,6 +4140,7 @@ void syscall_init(void) {
     syscall_register(SYS_READLINK, sys_readlink);
     syscall_register(SYS_UMASK, sys_umask);
     syscall_register(SYS_GETTIMEOFDAY, sys_gettimeofday);
+    syscall_register(SYS_SETTIMEOFDAY, sys_settimeofday);
     syscall_register(SYS_GETUID, sys_getuid);
     syscall_register(SYS_SYSLOG, sys_syslog);
     syscall_register(SYS_GETGID, sys_getgid);
@@ -4027,6 +4173,9 @@ void syscall_init(void) {
     syscall_register(SYS_SYNC, sys_sync);
     syscall_register(SYS_FSYNC, sys_fsync);
     syscall_register(SYS_FDATASYNC, sys_fdatasync);
+
+    /* Power management */
+    syscall_register(SYS_REBOOT, sys_reboot);
 
     /* Socket syscalls */
     syscall_register(SYS_SOCKET, sys_socket);

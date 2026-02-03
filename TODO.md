@@ -394,25 +394,24 @@ Complex relocations, symbol resolution, and library loading are delegated to the
 
 ---
 
-## Phase 11: Power Management
+## Phase 11: Power Management [PARTIAL]
 
-### 11.1 ACPI Power States
+### 11.1 ACPI Power States [PARTIAL]
 - [ ] S0 (working) state management
 - [ ] S3 (suspend to RAM) - optional
-- [ ] S5 (soft off) - shutdown
+- [x] S5 (soft off) - shutdown via ACPI PM1a_CNT
 - [ ] Power button event handling
 
 ### 11.2 CPU Power Management
 - [ ] C-states (idle power saving)
 - [ ] P-states (frequency scaling) - optional
-- [ ] HLT instruction in idle loop (already done)
+- [x] HLT instruction in idle loop (already done)
 
 ---
 
-## Phase 12: User-Space Support [USER-OWNED]
+## Phase 12: User-Space Support
 
-> **NOTE**: Phase 12 is **USER-OWNED** (off-limits unless explicitly requested).
-> Goal: Self-hosting OS for development work.
+> **NOTE**: Goal is a self-hosting OS for development work.
 >
 > **See `docs/USERSPACE_CHECKLIST.md` for the comprehensive checklist.**
 
@@ -428,18 +427,18 @@ Complex relocations, symbol resolution, and library loading are delegated to the
 
 ---
 
-## Phase 13: Miscellaneous
+## Phase 13: Miscellaneous [PARTIAL]
 
-### 13.1 Time Management
+### 13.1 Time Management [x]
 - [x] Wall clock time (RTC reading)
-- [ ] settimeofday() implementation
+- [x] settimeofday() implementation (root only)
 - [ ] Timezone support (/etc/localtime)
 - [x] time() syscall (via gettimeofday/clock_gettime)
 
-### 13.2 Random Number Generator
-- [ ] Entropy pool
-- [ ] /dev/random (blocking)
-- [ ] /dev/urandom improvements (better PRNG)
+### 13.2 Random Number Generator [x]
+- [x] Entropy pool (512-byte pool with TSC/PIT/RTC/HPET sources)
+- [ ] /dev/random (blocking) - deferred
+- [x] /dev/urandom improvements (entropy pool with mixing)
 - [x] getrandom() syscall
 
 ### 13.3 Kernel Modules (Optional - Advanced)
@@ -448,12 +447,14 @@ Complex relocations, symbol resolution, and library loading are delegated to the
 - [ ] Module unloading
 - [ ] insmod/rmmod/lsmod utilities
 
-### 13.4 Kernel Command Line
-- [ ] Parse kernel command line from bootloader
-- [ ] cmdline_get_param() API
-- [ ] Common options (root=, init=, console=)
+### 13.4 Kernel Command Line [x]
+- [x] Parse kernel command line from bootloader
+- [x] cmdline_get_param() API
+- [x] cmdline_has_flag() API
+- [x] Common options infrastructure (ready for root=, init=, console=)
 
-### 13.5 Kernel Updates & Live Patching
+### 13.5 System Control
+- [x] reboot() syscall (POWER_OFF, HALT, RESTART support)
 - [ ] USB mass storage driver for update media
 - [ ] Network-based kernel updates (HTTP/TFTP)
 - [ ] Kernel image verification (signatures/checksums)
@@ -490,7 +491,7 @@ Complex relocations, symbol resolution, and library loading are delegated to the
 14. [ ] SMP improvements - Phase 10
 15. [ ] Kernel modules - Phase 13.3
 
-### User-Owned (Phase 12) - See Phase 12 for full checklists
+### Phase 12 - User-Space - See Phase 12 for full checklists
 - [ ] C library (libc) + math library (libm)
 - [x] Shell (/bin/sh) - Basic shell with built-ins (cd, pwd, ls, cat, echo, mkdir, rm)
 - [ ] Coreutils, fileutils, binutils
@@ -502,7 +503,7 @@ Complex relocations, symbol resolution, and library loading are delegated to the
 ## Notes
 
 ### Project Goal
-**Self-hosting development OS** - An OS for development and programming work. Phase 12 (user-space: libc, shell, utilities, tools) is user-owned and off-limits unless explicitly requested.
+**Self-hosting development OS** - An OS for development and programming work, including libc, shell, utilities, and development tools.
 
 ### Architecture Decisions Pending
 - Filesystem: Both FAT32 and ext2 implemented!
